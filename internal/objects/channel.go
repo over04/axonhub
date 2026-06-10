@@ -1,8 +1,6 @@
 package objects
 
 import (
-	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
@@ -41,52 +39,6 @@ type ModelMapping struct {
 type HeaderEntry struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
-}
-
-// Override operation types.
-const (
-	OverrideOpSet          = "set"
-	OverrideOpDelete       = "delete"
-	OverrideOpRename       = "rename"
-	OverrideOpCopy         = "copy"
-	OverrideOpArrayAppend  = "array_append"
-	OverrideOpArrayPrepend = "array_prepend"
-	OverrideOpArrayInsert  = "array_insert"
-)
-
-// OverrideOperation defines a structured override operation for request body/header manipulation.
-type OverrideOperation struct {
-	Op        string `json:"op"`
-	Path      string `json:"path,omitempty"`
-	From      string `json:"from,omitempty"`
-	To        string `json:"to,omitempty"`
-	Value     string `json:"value,omitempty"`
-	Condition string `json:"condition,omitempty"`
-	// Index is the target position for array_insert. Only used by array_insert.
-	// Negative values count from the end (-1 = before last). Out-of-range values are clamped to [0, len].
-	Index *int `json:"index,omitempty"`
-	// Splat controls whether a JSON-array value is spread into the target array
-	// (true: each element inserted individually) or inserted as a single nested element (false).
-	// Only meaningful for array_append, array_prepend, and array_insert. Defaults to true.
-	Splat *bool `json:"splat,omitempty"`
-}
-
-func HeaderEntriesToOverrideOperations(headers []HeaderEntry) []OverrideOperation {
-	if len(headers) == 0 {
-		return nil
-	}
-
-	ops := make([]OverrideOperation, 0, len(headers))
-	for _, header := range headers {
-		if header.Value == "__AXONHUB_CLEAR__" {
-			ops = append(ops, OverrideOperation{Op: OverrideOpDelete, Path: header.Key})
-			continue
-		}
-
-		ops = append(ops, OverrideOperation{Op: OverrideOpSet, Path: header.Key, Value: header.Value})
-	}
-
-	return ops
 }
 
 type TransformOptions struct {
@@ -134,25 +86,8 @@ type ChannelSettings struct {
 	// balancing where providers use different casing for the same model.
 	LowercaseModelID bool `json:"lowercaseModelId"`
 
-	// OverrideParameters sets the channel override the request body.
-	// A json string.
-	// e.g. {"max_tokens": 100}, {"temperature": 0.7}
-	// Deprecated Use bodyOverrideOperations instead.
-	OverrideParameters string `json:"overrideParameters"`
-
-	// BodyOverrideOperations sets the channel override operations for the request body.
-	// When present (including an empty array), it takes precedence over OverrideParameters.
-	BodyOverrideOperations []OverrideOperation `json:"bodyOverrideOperations,omitempty"`
-
-	// OverrideHeaders sets the channel override the request headers.
-	// e.g. [{"key": "User-Agent", "value": "AxonHub"}]
-	// Supported ops: set (default), delete, rename, copy.
-	// Deprecated Use headerOverrideOperations instead.
-	OverrideHeaders []HeaderEntry `json:"overrideHeaders"`
-
-	// HeaderOverrideOperations sets the channel override operations for request headers.
-	// When present (including an empty array), it takes precedence over OverrideHeaders.
-	HeaderOverrideOperations []OverrideOperation `json:"headerOverrideOperations,omitempty"`
+	// ParamOverride stores new-api compatible request body rules and runtime request header rules as a JSON string.
+	ParamOverride string `json:"paramOverride,omitempty"`
 
 	// Proxy configuration for the channel. If not set, defaults to environment proxy type.
 	Proxy *httpclient.ProxyConfig `json:"proxy,omitempty"`
@@ -331,63 +266,4 @@ const (
 
 type ChannelPolicies struct {
 	Stream CapabilityPolicy `json:"stream,omitempty"`
-}
-
-// ParseOverrideOperations parses the override parameters string.
-// Supports both legacy map format (JSON object) and new operation array format (JSON array).
-// Legacy format is automatically converted to OverrideOperation slice.
-func ParseOverrideOperations(raw string) ([]OverrideOperation, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" || raw == "{}" || raw == "[]" {
-		return nil, nil
-	}
-
-	if raw[0] == '[' {
-		var ops []OverrideOperation
-		if err := json.Unmarshal([]byte(raw), &ops); err != nil {
-			return nil, fmt.Errorf("invalid override operations: %w", err)
-		}
-
-		return ops, nil
-	}
-
-	var legacy map[string]any
-	if err := json.Unmarshal([]byte(raw), &legacy); err != nil {
-		return nil, fmt.Errorf("invalid override parameters: %w", err)
-	}
-
-	ops := make([]OverrideOperation, 0, len(legacy))
-	for key, value := range legacy {
-		if strVal, ok := value.(string); ok && strVal == "__AXONHUB_CLEAR__" {
-			ops = append(ops, OverrideOperation{Op: OverrideOpDelete, Path: key})
-		} else {
-			// Convert value to string
-			var strValue string
-
-			switch v := value.(type) {
-			case string:
-				strValue = v
-			default:
-				strValue = fmt.Sprintf("%v", value)
-			}
-
-			ops = append(ops, OverrideOperation{Op: OverrideOpSet, Path: key, Value: strValue})
-		}
-	}
-
-	return ops, nil
-}
-
-// SerializeOverrideOperations converts override operations to a JSON string for storage.
-func SerializeOverrideOperations(ops []OverrideOperation) (string, error) {
-	if len(ops) == 0 {
-		return "[]", nil
-	}
-
-	data, err := json.Marshal(ops)
-	if err != nil {
-		return "", fmt.Errorf("failed to serialize override operations: %w", err)
-	}
-
-	return string(data), nil
 }

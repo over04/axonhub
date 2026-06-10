@@ -15,7 +15,7 @@ This architecture provides:
 - Real-time tracing and per-project usage logs
 - Support for multiple API formats (OpenAI, Anthropic, Gemini, and custom variants)
 - Model-aware circuit breaking and auto-failover
-- Dynamic request body and header overrides with template support
+- Dynamic request body and runtime request-header parameter rules
 - Quota enforcement and prompt injection
 - Model access control via API key profiles
 - Channel selection with tag-based filtering
@@ -36,7 +36,7 @@ This architecture provides:
 - **`performance.go`** - Performance monitoring and metrics
 - **`prompt.go`** - Prompt injection logic for projects and models
 - **`quota.go`** - API key quota enforcement middleware
-- **`override.go`** - Request body and header override middleware with template support
+- **`override.go`** - Parameter override middleware for request body and runtime request-header rules
 - **`model_circuit_breaker.go`** - Circuit breaker tracker for specific models on channels
 - **`tester.go`** - Testing utilities
 
@@ -116,7 +116,7 @@ The orchestrator uses a pipeline-based architecture with middleware support:
 
 2. **Outbound Pipeline**:
    - Channel selection
-   - Request body and header overrides
+   - Request body and runtime request-header parameter rules
    - Transform options application
    - Performance tracking
    - Request execution persistence

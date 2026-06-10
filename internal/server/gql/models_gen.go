@@ -58,18 +58,6 @@ type AddUserToProjectInput struct {
 	RoleIDs   []*objects.GUID `json:"roleIDs,omitempty"`
 }
 
-type ApplyChannelOverrideTemplateInput struct {
-	TemplateID objects.GUID       `json:"templateID"`
-	ChannelIDs []*objects.GUID    `json:"channelIDs"`
-	Mode       *OverrideApplyMode `json:"mode,omitempty"`
-}
-
-type ApplyChannelOverrideTemplatePayload struct {
-	Success  bool           `json:"success"`
-	Updated  int            `json:"updated"`
-	Channels []*ent.Channel `json:"channels"`
-}
-
 type AutoDisableAPIKey struct {
 	Enabled  bool                       `json:"enabled"`
 	Statuses []*AutoDisableAPIKeyStatus `json:"statuses"`
@@ -157,16 +145,6 @@ type ClearCachePayload struct {
 	Success bool                `json:"success"`
 	Message string              `json:"message"`
 	Targets []DiagnosticsTarget `json:"targets"`
-}
-
-type ClearChannelOverrideTemplatesInput struct {
-	ChannelIDs []*objects.GUID `json:"channelIDs"`
-}
-
-type ClearChannelOverrideTemplatesPayload struct {
-	Success  bool           `json:"success"`
-	Updated  int            `json:"updated"`
-	Channels []*ent.Channel `json:"channels"`
 }
 
 type CompleteAutoDisableChannelOnboardingInput struct {
@@ -614,61 +592,6 @@ func (e *DiagnosticsTarget) UnmarshalJSON(b []byte) error {
 }
 
 func (e DiagnosticsTarget) MarshalJSON() ([]byte, error) {
-	var buf bytes.Buffer
-	e.MarshalGQL(&buf)
-	return buf.Bytes(), nil
-}
-
-type OverrideApplyMode string
-
-const (
-	OverrideApplyModeMerge   OverrideApplyMode = "MERGE"
-	OverrideApplyModeReplace OverrideApplyMode = "REPLACE"
-)
-
-var AllOverrideApplyMode = []OverrideApplyMode{
-	OverrideApplyModeMerge,
-	OverrideApplyModeReplace,
-}
-
-func (e OverrideApplyMode) IsValid() bool {
-	switch e {
-	case OverrideApplyModeMerge, OverrideApplyModeReplace:
-		return true
-	}
-	return false
-}
-
-func (e OverrideApplyMode) String() string {
-	return string(e)
-}
-
-func (e *OverrideApplyMode) UnmarshalGQL(v any) error {
-	str, ok := v.(string)
-	if !ok {
-		return fmt.Errorf("enums must be strings")
-	}
-
-	*e = OverrideApplyMode(str)
-	if !e.IsValid() {
-		return fmt.Errorf("%s is not a valid OverrideApplyMode", str)
-	}
-	return nil
-}
-
-func (e OverrideApplyMode) MarshalGQL(w io.Writer) {
-	fmt.Fprint(w, strconv.Quote(e.String()))
-}
-
-func (e *OverrideApplyMode) UnmarshalJSON(b []byte) error {
-	s, err := strconv.Unquote(string(b))
-	if err != nil {
-		return err
-	}
-	return e.UnmarshalGQL(s)
-}
-
-func (e OverrideApplyMode) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

@@ -18,28 +18,6 @@ input HeaderEntryInput {
   value: String!
 }
 
-type OverrideOperation {
-  op: String!
-  path: String
-  from: String
-  to: String
-  value: String
-  condition: String
-  index: Int
-  splat: Boolean
-}
-
-input OverrideOperationInput {
-  op: String!
-  path: String
-  from: String
-  to: String
-  value: String
-  condition: String
-  index: Int
-  splat: Boolean
-}
-
 type TransformOptions {
   forceArrayInstructions: Boolean!
   forceArrayInputs: Boolean!
@@ -105,8 +83,7 @@ type ChannelSettings {
   lowercaseModelId: Boolean
   proxy: ProxyConfig
   transformOptions: TransformOptions
-  headerOverrideOperations: [OverrideOperation!]! @goField(forceResolver: true)
-  bodyOverrideOperations: [OverrideOperation!]! @goField(forceResolver: true)
+  paramOverride: String
   passThroughUserAgent: Boolean
   passThroughBody: Boolean
   rateLimit: ChannelRateLimit
@@ -140,8 +117,7 @@ input ChannelSettingsInput {
   lowercaseModelId: Boolean
   proxy: ProxyConfigInput
   transformOptions: TransformOptionsInput
-  headerOverrideOperations: [OverrideOperationInput!]
-  bodyOverrideOperations: [OverrideOperationInput!]
+  paramOverride: String
   passThroughUserAgent: Boolean
   passThroughBody: Boolean
   rateLimit: ChannelRateLimitInput
@@ -721,34 +697,6 @@ type SpanSystemInstruction {
   instruction: String
 }
 
-# Channel Override Template Types
-enum OverrideApplyMode {
-  MERGE
-  REPLACE
-}
-
-input ApplyChannelOverrideTemplateInput {
-  templateID: ID!
-  channelIDs: [ID!]!
-  mode: OverrideApplyMode
-}
-
-type ApplyChannelOverrideTemplatePayload {
-  success: Boolean!
-  updated: Int!
-  channels: [Channel!]!
-}
-
-input ClearChannelOverrideTemplatesInput {
-  channelIDs: [ID!]!
-}
-
-type ClearChannelOverrideTemplatesPayload {
-  success: Boolean!
-  updated: Int!
-  channels: [Channel!]!
-}
-
 type DeleteDisabledAPIKeysPayload {
   success: Boolean!
   message: String
@@ -814,22 +762,6 @@ type Mutation {
 
   createDataStorage(input: CreateDataStorageInput!): DataStorage!
   updateDataStorage(id: ID!, input: UpdateDataStorageInput!): DataStorage!
-
-  # Channel Override Template Mutations
-  createChannelOverrideTemplate(
-    input: CreateChannelOverrideTemplateInput!
-  ): ChannelOverrideTemplate!
-  updateChannelOverrideTemplate(
-    id: ID!
-    input: UpdateChannelOverrideTemplateInput!
-  ): ChannelOverrideTemplate!
-  deleteChannelOverrideTemplate(id: ID!): Boolean!
-  applyChannelOverrideTemplate(
-    input: ApplyChannelOverrideTemplateInput!
-  ): ApplyChannelOverrideTemplatePayload!
-  clearChannelOverrideTemplates(
-    input: ClearChannelOverrideTemplatesInput!
-  ): ClearChannelOverrideTemplatesPayload!
 
   # Trigger immediate model sync for a channel
   syncChannelModels(channelID: ID!, pattern: String): SyncChannelModelsPayload!

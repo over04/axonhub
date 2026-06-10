@@ -190,41 +190,6 @@ var (
 			},
 		},
 	}
-	// ChannelOverrideTemplatesColumns holds the columns for the "channel_override_templates" table.
-	ChannelOverrideTemplatesColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "created_at", Type: field.TypeTime, Default: schema.Expr("CURRENT_TIMESTAMP")},
-		{Name: "updated_at", Type: field.TypeTime, Default: schema.Expr("CURRENT_TIMESTAMP")},
-		{Name: "deleted_at", Type: field.TypeInt, Default: 0},
-		{Name: "name", Type: field.TypeString},
-		{Name: "description", Type: field.TypeString, Nullable: true},
-		{Name: "override_parameters", Type: field.TypeString},
-		{Name: "override_headers", Type: field.TypeJSON},
-		{Name: "header_override_operations", Type: field.TypeJSON, Nullable: true},
-		{Name: "body_override_operations", Type: field.TypeJSON, Nullable: true},
-		{Name: "user_id", Type: field.TypeInt, Nullable: true},
-	}
-	// ChannelOverrideTemplatesTable holds the schema information for the "channel_override_templates" table.
-	ChannelOverrideTemplatesTable = &schema.Table{
-		Name:       "channel_override_templates",
-		Columns:    ChannelOverrideTemplatesColumns,
-		PrimaryKey: []*schema.Column{ChannelOverrideTemplatesColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "channel_override_templates_users_channel_override_templates",
-				Columns:    []*schema.Column{ChannelOverrideTemplatesColumns[10]},
-				RefColumns: []*schema.Column{UsersColumns[0]},
-				OnDelete:   schema.SetNull,
-			},
-		},
-		Indexes: []*schema.Index{
-			{
-				Name:    "channel_override_templates_by_user_name",
-				Unique:  true,
-				Columns: []*schema.Column{ChannelOverrideTemplatesColumns[10], ChannelOverrideTemplatesColumns[4], ChannelOverrideTemplatesColumns[3]},
-			},
-		},
-	}
 	// ChannelProbesColumns holds the columns for the "channel_probes" table.
 	ChannelProbesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -1001,7 +966,6 @@ var (
 		ChannelsTable,
 		ChannelModelPricesTable,
 		ChannelModelPriceVersionsTable,
-		ChannelOverrideTemplatesTable,
 		ChannelProbesTable,
 		DataStoragesTable,
 		ModelsTable,
@@ -1030,7 +994,6 @@ func init() {
 	APIKeyProfileTemplatesTable.ForeignKeys[0].RefTable = ProjectsTable
 	ChannelModelPricesTable.ForeignKeys[0].RefTable = ChannelsTable
 	ChannelModelPriceVersionsTable.ForeignKeys[0].RefTable = ChannelModelPricesTable
-	ChannelOverrideTemplatesTable.ForeignKeys[0].RefTable = UsersTable
 	ChannelProbesTable.ForeignKeys[0].RefTable = ChannelsTable
 	OidcIdentitiesTable.ForeignKeys[0].RefTable = UsersTable
 	ProviderQuotaStatusTable.ForeignKeys[0].RefTable = ChannelsTable

@@ -15,7 +15,6 @@ import (
 	"github.com/looplj/axonhub/internal/ent/channel"
 	"github.com/looplj/axonhub/internal/ent/channelmodelprice"
 	"github.com/looplj/axonhub/internal/ent/channelmodelpriceversion"
-	"github.com/looplj/axonhub/internal/ent/channeloverridetemplate"
 	"github.com/looplj/axonhub/internal/ent/channelprobe"
 	"github.com/looplj/axonhub/internal/ent/datastorage"
 	"github.com/looplj/axonhub/internal/ent/model"
@@ -1183,150 +1182,6 @@ func newChannelModelPriceVersionPaginateArgs(rv map[string]any) *channelmodelpri
 	}
 	if v, ok := rv[whereField].(*ChannelModelPriceVersionWhereInput); ok {
 		args.opts = append(args.opts, WithChannelModelPriceVersionFilter(v.Filter))
-	}
-	return args
-}
-
-// CollectFields tells the query-builder to eagerly load connected nodes by resolver context.
-func (_q *ChannelOverrideTemplateQuery) CollectFields(ctx context.Context, satisfies ...string) (*ChannelOverrideTemplateQuery, error) {
-	fc := graphql.GetFieldContext(ctx)
-	if fc == nil {
-		return _q, nil
-	}
-	if err := _q.collectField(ctx, false, graphql.GetOperationContext(ctx), fc.Field, nil, satisfies...); err != nil {
-		return nil, err
-	}
-	return _q, nil
-}
-
-func (_q *ChannelOverrideTemplateQuery) collectField(ctx context.Context, oneNode bool, opCtx *graphql.OperationContext, collected graphql.CollectedField, path []string, satisfies ...string) error {
-	path = append([]string(nil), path...)
-	var (
-		unknownSeen    bool
-		fieldSeen      = make(map[string]struct{}, len(channeloverridetemplate.Columns))
-		selectedFields = []string{channeloverridetemplate.FieldID}
-	)
-	for _, field := range graphql.CollectFields(opCtx, collected.Selections, satisfies) {
-		switch field.Name {
-
-		case "user":
-			var (
-				alias = field.Alias
-				path  = append(path, alias)
-				query = (&UserClient{config: _q.config}).Query()
-			)
-			if err := query.collectField(ctx, oneNode, opCtx, field, path, mayAddCondition(satisfies, userImplementors)...); err != nil {
-				return err
-			}
-			_q.withUser = query
-			if _, ok := fieldSeen[channeloverridetemplate.FieldUserID]; !ok {
-				selectedFields = append(selectedFields, channeloverridetemplate.FieldUserID)
-				fieldSeen[channeloverridetemplate.FieldUserID] = struct{}{}
-			}
-		case "createdAt":
-			if _, ok := fieldSeen[channeloverridetemplate.FieldCreatedAt]; !ok {
-				selectedFields = append(selectedFields, channeloverridetemplate.FieldCreatedAt)
-				fieldSeen[channeloverridetemplate.FieldCreatedAt] = struct{}{}
-			}
-		case "updatedAt":
-			if _, ok := fieldSeen[channeloverridetemplate.FieldUpdatedAt]; !ok {
-				selectedFields = append(selectedFields, channeloverridetemplate.FieldUpdatedAt)
-				fieldSeen[channeloverridetemplate.FieldUpdatedAt] = struct{}{}
-			}
-		case "userID":
-			if _, ok := fieldSeen[channeloverridetemplate.FieldUserID]; !ok {
-				selectedFields = append(selectedFields, channeloverridetemplate.FieldUserID)
-				fieldSeen[channeloverridetemplate.FieldUserID] = struct{}{}
-			}
-		case "name":
-			if _, ok := fieldSeen[channeloverridetemplate.FieldName]; !ok {
-				selectedFields = append(selectedFields, channeloverridetemplate.FieldName)
-				fieldSeen[channeloverridetemplate.FieldName] = struct{}{}
-			}
-		case "description":
-			if _, ok := fieldSeen[channeloverridetemplate.FieldDescription]; !ok {
-				selectedFields = append(selectedFields, channeloverridetemplate.FieldDescription)
-				fieldSeen[channeloverridetemplate.FieldDescription] = struct{}{}
-			}
-		case "overrideParameters":
-			if _, ok := fieldSeen[channeloverridetemplate.FieldOverrideParameters]; !ok {
-				selectedFields = append(selectedFields, channeloverridetemplate.FieldOverrideParameters)
-				fieldSeen[channeloverridetemplate.FieldOverrideParameters] = struct{}{}
-			}
-		case "overrideHeaders":
-			if _, ok := fieldSeen[channeloverridetemplate.FieldOverrideHeaders]; !ok {
-				selectedFields = append(selectedFields, channeloverridetemplate.FieldOverrideHeaders)
-				fieldSeen[channeloverridetemplate.FieldOverrideHeaders] = struct{}{}
-			}
-		case "headerOverrideOperations":
-			if _, ok := fieldSeen[channeloverridetemplate.FieldHeaderOverrideOperations]; !ok {
-				selectedFields = append(selectedFields, channeloverridetemplate.FieldHeaderOverrideOperations)
-				fieldSeen[channeloverridetemplate.FieldHeaderOverrideOperations] = struct{}{}
-			}
-		case "bodyOverrideOperations":
-			if _, ok := fieldSeen[channeloverridetemplate.FieldBodyOverrideOperations]; !ok {
-				selectedFields = append(selectedFields, channeloverridetemplate.FieldBodyOverrideOperations)
-				fieldSeen[channeloverridetemplate.FieldBodyOverrideOperations] = struct{}{}
-			}
-		case "id":
-		case "__typename":
-		default:
-			unknownSeen = true
-		}
-	}
-	if !unknownSeen {
-		_q.Select(selectedFields...)
-	}
-	return nil
-}
-
-type channeloverridetemplatePaginateArgs struct {
-	first, last   *int
-	after, before *Cursor
-	opts          []ChannelOverrideTemplatePaginateOption
-}
-
-func newChannelOverrideTemplatePaginateArgs(rv map[string]any) *channeloverridetemplatePaginateArgs {
-	args := &channeloverridetemplatePaginateArgs{}
-	if rv == nil {
-		return args
-	}
-	if v := rv[firstField]; v != nil {
-		args.first = v.(*int)
-	}
-	if v := rv[lastField]; v != nil {
-		args.last = v.(*int)
-	}
-	if v := rv[afterField]; v != nil {
-		args.after = v.(*Cursor)
-	}
-	if v := rv[beforeField]; v != nil {
-		args.before = v.(*Cursor)
-	}
-	if v, ok := rv[orderByField]; ok {
-		switch v := v.(type) {
-		case map[string]any:
-			var (
-				err1, err2 error
-				order      = &ChannelOverrideTemplateOrder{Field: &ChannelOverrideTemplateOrderField{}, Direction: entgql.OrderDirectionAsc}
-			)
-			if d, ok := v[directionField]; ok {
-				err1 = order.Direction.UnmarshalGQL(d)
-			}
-			if f, ok := v[fieldField]; ok {
-				err2 = order.Field.UnmarshalGQL(f)
-			}
-			if err1 == nil && err2 == nil {
-				args.opts = append(args.opts, WithChannelOverrideTemplateOrder(order))
-			}
-		case *ChannelOverrideTemplateOrder:
-			if v != nil {
-				args.opts = append(args.opts, WithChannelOverrideTemplateOrder(v))
-			}
-		}
-	}
-	if v, ok := rv[whereField].(*ChannelOverrideTemplateWhereInput); ok {
-		args.opts = append(args.opts, WithChannelOverrideTemplateFilter(v.Filter))
 	}
 	return args
 }
@@ -5618,95 +5473,6 @@ func (_q *UserQuery) collectField(ctx context.Context, oneNode bool, opCtx *grap
 				*wq = *query
 			})
 
-		case "channelOverrideTemplates":
-			var (
-				alias = field.Alias
-				path  = append(path, alias)
-				query = (&ChannelOverrideTemplateClient{config: _q.config}).Query()
-			)
-			args := newChannelOverrideTemplatePaginateArgs(fieldArgs(ctx, new(ChannelOverrideTemplateWhereInput), path...))
-			if err := validateFirstLast(args.first, args.last); err != nil {
-				return fmt.Errorf("validate first and last in path %q: %w", path, err)
-			}
-			pager, err := newChannelOverrideTemplatePager(args.opts, args.last != nil)
-			if err != nil {
-				return fmt.Errorf("create new pager in path %q: %w", path, err)
-			}
-			if query, err = pager.applyFilter(query); err != nil {
-				return err
-			}
-			ignoredEdges := !hasCollectedField(ctx, append(path, edgesField)...)
-			if hasCollectedField(ctx, append(path, totalCountField)...) || hasCollectedField(ctx, append(path, pageInfoField)...) {
-				hasPagination := args.after != nil || args.first != nil || args.before != nil || args.last != nil
-				if hasPagination || ignoredEdges {
-					query := query.Clone()
-					_q.loadTotal = append(_q.loadTotal, func(ctx context.Context, nodes []*User) error {
-						ids := make([]driver.Value, len(nodes))
-						for i := range nodes {
-							ids[i] = nodes[i].ID
-						}
-						var v []struct {
-							NodeID int `sql:"user_id"`
-							Count  int `sql:"count"`
-						}
-						query.Where(func(s *sql.Selector) {
-							s.Where(sql.InValues(s.C(user.ChannelOverrideTemplatesColumn), ids...))
-						})
-						if err := query.GroupBy(user.ChannelOverrideTemplatesColumn).Aggregate(Count()).Scan(ctx, &v); err != nil {
-							return err
-						}
-						m := make(map[int]int, len(v))
-						for i := range v {
-							m[v[i].NodeID] = v[i].Count
-						}
-						for i := range nodes {
-							n := m[nodes[i].ID]
-							if nodes[i].Edges.totalCount[3] == nil {
-								nodes[i].Edges.totalCount[3] = make(map[string]int)
-							}
-							nodes[i].Edges.totalCount[3][alias] = n
-						}
-						return nil
-					})
-				} else {
-					_q.loadTotal = append(_q.loadTotal, func(_ context.Context, nodes []*User) error {
-						for i := range nodes {
-							n := len(nodes[i].Edges.ChannelOverrideTemplates)
-							if nodes[i].Edges.totalCount[3] == nil {
-								nodes[i].Edges.totalCount[3] = make(map[string]int)
-							}
-							nodes[i].Edges.totalCount[3][alias] = n
-						}
-						return nil
-					})
-				}
-			}
-			if ignoredEdges || (args.first != nil && *args.first == 0) || (args.last != nil && *args.last == 0) {
-				continue
-			}
-			if query, err = pager.applyCursors(query, args.after, args.before); err != nil {
-				return err
-			}
-			path = append(path, edgesField, nodeField)
-			if field := collectedField(ctx, path...); field != nil {
-				if err := query.collectField(ctx, false, opCtx, *field, path, mayAddCondition(satisfies, channeloverridetemplateImplementors)...); err != nil {
-					return err
-				}
-			}
-			if limit := paginateLimit(args.first, args.last); limit > 0 {
-				if oneNode {
-					pager.applyOrder(query.Limit(limit))
-				} else {
-					modify := entgql.LimitPerRow(user.ChannelOverrideTemplatesColumn, limit, pager.orderExpr(query))
-					query.modifiers = append(query.modifiers, modify)
-				}
-			} else {
-				query = pager.applyOrder(query)
-			}
-			_q.WithNamedChannelOverrideTemplates(alias, func(wq *ChannelOverrideTemplateQuery) {
-				*wq = *query
-			})
-
 		case "oidcIdentities":
 			var (
 				alias = field.Alias
@@ -5750,10 +5516,10 @@ func (_q *UserQuery) collectField(ctx context.Context, oneNode bool, opCtx *grap
 						}
 						for i := range nodes {
 							n := m[nodes[i].ID]
-							if nodes[i].Edges.totalCount[4] == nil {
-								nodes[i].Edges.totalCount[4] = make(map[string]int)
+							if nodes[i].Edges.totalCount[3] == nil {
+								nodes[i].Edges.totalCount[3] = make(map[string]int)
 							}
-							nodes[i].Edges.totalCount[4][alias] = n
+							nodes[i].Edges.totalCount[3][alias] = n
 						}
 						return nil
 					})
@@ -5761,10 +5527,10 @@ func (_q *UserQuery) collectField(ctx context.Context, oneNode bool, opCtx *grap
 					_q.loadTotal = append(_q.loadTotal, func(_ context.Context, nodes []*User) error {
 						for i := range nodes {
 							n := len(nodes[i].Edges.OidcIdentities)
-							if nodes[i].Edges.totalCount[4] == nil {
-								nodes[i].Edges.totalCount[4] = make(map[string]int)
+							if nodes[i].Edges.totalCount[3] == nil {
+								nodes[i].Edges.totalCount[3] = make(map[string]int)
 							}
-							nodes[i].Edges.totalCount[4][alias] = n
+							nodes[i].Edges.totalCount[3][alias] = n
 						}
 						return nil
 					})
@@ -5839,10 +5605,10 @@ func (_q *UserQuery) collectField(ctx context.Context, oneNode bool, opCtx *grap
 						}
 						for i := range nodes {
 							n := m[nodes[i].ID]
-							if nodes[i].Edges.totalCount[5] == nil {
-								nodes[i].Edges.totalCount[5] = make(map[string]int)
+							if nodes[i].Edges.totalCount[4] == nil {
+								nodes[i].Edges.totalCount[4] = make(map[string]int)
 							}
-							nodes[i].Edges.totalCount[5][alias] = n
+							nodes[i].Edges.totalCount[4][alias] = n
 						}
 						return nil
 					})
@@ -5850,10 +5616,10 @@ func (_q *UserQuery) collectField(ctx context.Context, oneNode bool, opCtx *grap
 					_q.loadTotal = append(_q.loadTotal, func(_ context.Context, nodes []*User) error {
 						for i := range nodes {
 							n := len(nodes[i].Edges.ProjectUsers)
-							if nodes[i].Edges.totalCount[5] == nil {
-								nodes[i].Edges.totalCount[5] = make(map[string]int)
+							if nodes[i].Edges.totalCount[4] == nil {
+								nodes[i].Edges.totalCount[4] = make(map[string]int)
 							}
-							nodes[i].Edges.totalCount[5][alias] = n
+							nodes[i].Edges.totalCount[4][alias] = n
 						}
 						return nil
 					})
@@ -5928,10 +5694,10 @@ func (_q *UserQuery) collectField(ctx context.Context, oneNode bool, opCtx *grap
 						}
 						for i := range nodes {
 							n := m[nodes[i].ID]
-							if nodes[i].Edges.totalCount[6] == nil {
-								nodes[i].Edges.totalCount[6] = make(map[string]int)
+							if nodes[i].Edges.totalCount[5] == nil {
+								nodes[i].Edges.totalCount[5] = make(map[string]int)
 							}
-							nodes[i].Edges.totalCount[6][alias] = n
+							nodes[i].Edges.totalCount[5][alias] = n
 						}
 						return nil
 					})
@@ -5939,10 +5705,10 @@ func (_q *UserQuery) collectField(ctx context.Context, oneNode bool, opCtx *grap
 					_q.loadTotal = append(_q.loadTotal, func(_ context.Context, nodes []*User) error {
 						for i := range nodes {
 							n := len(nodes[i].Edges.UserRoles)
-							if nodes[i].Edges.totalCount[6] == nil {
-								nodes[i].Edges.totalCount[6] = make(map[string]int)
+							if nodes[i].Edges.totalCount[5] == nil {
+								nodes[i].Edges.totalCount[5] = make(map[string]int)
 							}
-							nodes[i].Edges.totalCount[6][alias] = n
+							nodes[i].Edges.totalCount[5][alias] = n
 						}
 						return nil
 					})

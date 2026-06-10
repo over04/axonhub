@@ -152,33 +152,6 @@ AxonHub adopts a multi-level permission management architecture, supporting both
 
 ---
 
-### 5. Channel Override Template
-
-**Description**: User-defined templates for overriding channel request parameters and headers.
-
-**Level**: User (private to each user)
-
-**Fields**:
-- `id`: Template unique identifier
-- `user_id`: Owner user ID (immutable)
-- `name`: Template name (unique per user and channel type)
-- `description`: Template description
-- `channel_type`: Channel type this template applies to
-- `override_parameters`: Override request body parameters as JSON string
-- `override_headers`: Override request headers (JSON array)
-- `created_at`: Creation time
-- `updated_at`: Update time
-- `deleted_at`: Soft deletion time
-
-**Permissions**:
-- Users can only access their own templates
-- Owner can access all templates
-
-**Relationships**:
-- Belongs to one User
-
----
-
 ### 6. Data Storage
 
 **Description**: Data storage configuration for storing request/response data (database, filesystem, S3, GCS).
@@ -520,8 +493,6 @@ erDiagram
     UsageLog }o--|| Request : "records"
     UsageLog }o--o| Channel : "uses"
 
-    User ||--o{ ChannelOverrideTemplate : "creates"
-
     Role ||--o{ RoleScope : "contains"
 
     AxonHub {    }
@@ -560,13 +531,6 @@ erDiagram
         uuid channel_id FK
         int success_rate
         int avg_latency_ms
-    }
-
-    ChannelOverrideTemplate {
-        uuid id PK
-        uuid user_id FK
-        string name
-        string channel_type
     }
 
     DataStorage {
@@ -694,8 +658,6 @@ Project
 - **User** → **Projects** (Many-to-Many): Users can join multiple projects
 - **User** → **Roles** (Many-to-Many): Users can have multiple roles (Global and Project)
 - **User** → **API Keys** (One-to-Many): Users can create multiple API Keys
-- **User** → **Channel Override Templates** (One-to-Many): Users can create multiple templates
-
 #### Project Relationships
 - **Project** → **Users** (Many-to-Many): Projects contain multiple users
 - **Project** → **Roles** (One-to-Many): Projects contain multiple project-level roles
@@ -847,9 +809,6 @@ Project
 
 4. **Channel Performance**:
    - `channel_id` + `deleted_at` (unique composite index)
-
-5. **Channel Override Template**:
-   - `user_id` + `channel_type` + `name` + `deleted_at` (unique composite index)
 
 6. **Data Storage**:
    - `name` (unique index)

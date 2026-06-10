@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -32,6 +33,16 @@ type ChannelRetryable interface {
 	// PrepareForRetry prepares the transformer for retry.
 	// It will be called if CanRetry returns true.
 	PrepareForRetry(ctx context.Context) error
+}
+
+// RetrySkipper marks errors that should be returned without same-channel retry or channel switching.
+type RetrySkipper interface {
+	SkipRetry() bool
+}
+
+func shouldSkipRetry(err error) bool {
+	var skipper RetrySkipper
+	return errors.As(err, &skipper) && skipper.SkipRetry()
 }
 
 // ChannelCustomizedExecutor interface for channel need custom the process of request.
@@ -280,6 +291,10 @@ func (p *pipeline) Process(ctx context.Context, request *httpclient.Request) (*R
 		// Stop retrying if the context is canceled or the deadline is exceeded.
 		if ctx.Err() != nil {
 			return nil, lastErr
+		}
+
+		if shouldSkipRetry(lastErr) {
+			break
 		}
 
 		// Determine retry strategy

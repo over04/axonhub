@@ -13,7 +13,6 @@ import (
 	"github.com/looplj/axonhub/internal/ent/channel"
 	"github.com/looplj/axonhub/internal/ent/channelmodelprice"
 	"github.com/looplj/axonhub/internal/ent/channelmodelpriceversion"
-	"github.com/looplj/axonhub/internal/ent/channeloverridetemplate"
 	"github.com/looplj/axonhub/internal/ent/channelprobe"
 	"github.com/looplj/axonhub/internal/ent/datastorage"
 	"github.com/looplj/axonhub/internal/ent/model"
@@ -224,33 +223,6 @@ func (f TraverseChannelModelPriceVersion) Traverse(ctx context.Context, q ent.Qu
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.ChannelModelPriceVersionQuery", q)
-}
-
-// The ChannelOverrideTemplateFunc type is an adapter to allow the use of ordinary function as a Querier.
-type ChannelOverrideTemplateFunc func(context.Context, *ent.ChannelOverrideTemplateQuery) (ent.Value, error)
-
-// Query calls f(ctx, q).
-func (f ChannelOverrideTemplateFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
-	if q, ok := q.(*ent.ChannelOverrideTemplateQuery); ok {
-		return f(ctx, q)
-	}
-	return nil, fmt.Errorf("unexpected query type %T. expect *ent.ChannelOverrideTemplateQuery", q)
-}
-
-// The TraverseChannelOverrideTemplate type is an adapter to allow the use of ordinary function as Traverser.
-type TraverseChannelOverrideTemplate func(context.Context, *ent.ChannelOverrideTemplateQuery) error
-
-// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
-func (f TraverseChannelOverrideTemplate) Intercept(next ent.Querier) ent.Querier {
-	return next
-}
-
-// Traverse calls f(ctx, q).
-func (f TraverseChannelOverrideTemplate) Traverse(ctx context.Context, q ent.Query) error {
-	if q, ok := q.(*ent.ChannelOverrideTemplateQuery); ok {
-		return f(ctx, q)
-	}
-	return fmt.Errorf("unexpected query type %T. expect *ent.ChannelOverrideTemplateQuery", q)
 }
 
 // The ChannelProbeFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -752,8 +724,6 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.ChannelModelPriceQuery, predicate.ChannelModelPrice, channelmodelprice.OrderOption]{typ: ent.TypeChannelModelPrice, tq: q}, nil
 	case *ent.ChannelModelPriceVersionQuery:
 		return &query[*ent.ChannelModelPriceVersionQuery, predicate.ChannelModelPriceVersion, channelmodelpriceversion.OrderOption]{typ: ent.TypeChannelModelPriceVersion, tq: q}, nil
-	case *ent.ChannelOverrideTemplateQuery:
-		return &query[*ent.ChannelOverrideTemplateQuery, predicate.ChannelOverrideTemplate, channeloverridetemplate.OrderOption]{typ: ent.TypeChannelOverrideTemplate, tq: q}, nil
 	case *ent.ChannelProbeQuery:
 		return &query[*ent.ChannelProbeQuery, predicate.ChannelProbe, channelprobe.OrderOption]{typ: ent.TypeChannelProbe, tq: q}, nil
 	case *ent.DataStorageQuery:

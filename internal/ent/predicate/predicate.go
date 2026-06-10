@@ -21,9 +21,6 @@ type ChannelModelPrice func(*sql.Selector)
 // ChannelModelPriceVersion is the predicate function for channelmodelpriceversion builders.
 type ChannelModelPriceVersion func(*sql.Selector)
 
-// ChannelOverrideTemplate is the predicate function for channeloverridetemplate builders.
-type ChannelOverrideTemplate func(*sql.Selector)
-
 // ChannelProbe is the predicate function for channelprobe builders.
 type ChannelProbe func(*sql.Selector)
 

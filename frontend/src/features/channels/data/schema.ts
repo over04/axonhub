@@ -139,19 +139,6 @@ export const headerEntrySchema = z.object({
 });
 export type HeaderEntry = z.infer<typeof headerEntrySchema>;
 
-// Override Operation
-export const overrideOperationSchema = z.object({
-  op: z.enum(['set', 'delete', 'rename', 'copy', 'array_append', 'array_prepend', 'array_insert']),
-  path: z.string().optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
-  value: z.any().optional(),
-  condition: z.string().optional(),
-  index: z.number().int().nullish(),
-  splat: z.boolean().nullish(),
-});
-export type OverrideOperation = z.infer<typeof overrideOperationSchema>;
-
 // Proxy Type
 export const proxyTypeSchema = z.enum(['disabled', 'environment', 'url']);
 export type ProxyType = z.infer<typeof proxyTypeSchema>;
@@ -217,8 +204,7 @@ export const channelSettingsSchema = z.object({
   hideOriginalModels: z.boolean().optional(),
   hideMappedModels: z.boolean().optional(),
   lowercaseModelId: z.boolean().optional(),
-  bodyOverrideOperations: z.array(overrideOperationSchema).optional(),
-  headerOverrideOperations: z.array(overrideOperationSchema).optional(),
+  paramOverride: z.string().optional().nullable(),
   proxy: proxyConfigSchema.optional().nullable(),
   transformOptions: transformOptionsSchema.optional(),
   passThroughUserAgent: z.boolean().optional().nullable(),
@@ -735,15 +721,3 @@ export const bulkUpdateChannelOrderingResultSchema = z.object({
   channels: z.array(channelSchema),
 });
 export type BulkUpdateChannelOrderingResult = z.infer<typeof bulkUpdateChannelOrderingResultSchema>;
-
-// Re-export template types from templates.ts
-export type {
-  ChannelOverrideTemplate,
-  ChannelOverrideTemplateConnection,
-  CreateChannelOverrideTemplateInput,
-  UpdateChannelOverrideTemplateInput,
-  ApplyChannelOverrideTemplateInput,
-  ApplyChannelOverrideTemplatePayload,
-  ClearChannelOverrideTemplatesInput,
-  ClearChannelOverrideTemplatesPayload,
-} from './templates';

@@ -56,8 +56,6 @@ type UserEdges struct {
 	APIKeys []*APIKey `json:"api_keys,omitempty"`
 	// Roles holds the value of the roles edge.
 	Roles []*Role `json:"roles,omitempty"`
-	// ChannelOverrideTemplates holds the value of the channel_override_templates edge.
-	ChannelOverrideTemplates []*ChannelOverrideTemplate `json:"channel_override_templates,omitempty"`
 	// OidcIdentities holds the value of the oidc_identities edge.
 	OidcIdentities []*OIDCIdentity `json:"oidc_identities,omitempty"`
 	// ProjectUsers holds the value of the project_users edge.
@@ -66,17 +64,16 @@ type UserEdges struct {
 	UserRoles []*UserRole `json:"user_roles,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [7]bool
+	loadedTypes [6]bool
 	// totalCount holds the count of the edges above.
-	totalCount [7]map[string]int
+	totalCount [6]map[string]int
 
-	namedProjects                 map[string][]*Project
-	namedAPIKeys                  map[string][]*APIKey
-	namedRoles                    map[string][]*Role
-	namedChannelOverrideTemplates map[string][]*ChannelOverrideTemplate
-	namedOidcIdentities           map[string][]*OIDCIdentity
-	namedProjectUsers             map[string][]*UserProject
-	namedUserRoles                map[string][]*UserRole
+	namedProjects       map[string][]*Project
+	namedAPIKeys        map[string][]*APIKey
+	namedRoles          map[string][]*Role
+	namedOidcIdentities map[string][]*OIDCIdentity
+	namedProjectUsers   map[string][]*UserProject
+	namedUserRoles      map[string][]*UserRole
 }
 
 // ProjectsOrErr returns the Projects value or an error if the edge
@@ -106,19 +103,10 @@ func (e UserEdges) RolesOrErr() ([]*Role, error) {
 	return nil, &NotLoadedError{edge: "roles"}
 }
 
-// ChannelOverrideTemplatesOrErr returns the ChannelOverrideTemplates value or an error if the edge
-// was not loaded in eager-loading.
-func (e UserEdges) ChannelOverrideTemplatesOrErr() ([]*ChannelOverrideTemplate, error) {
-	if e.loadedTypes[3] {
-		return e.ChannelOverrideTemplates, nil
-	}
-	return nil, &NotLoadedError{edge: "channel_override_templates"}
-}
-
 // OidcIdentitiesOrErr returns the OidcIdentities value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) OidcIdentitiesOrErr() ([]*OIDCIdentity, error) {
-	if e.loadedTypes[4] {
+	if e.loadedTypes[3] {
 		return e.OidcIdentities, nil
 	}
 	return nil, &NotLoadedError{edge: "oidc_identities"}
@@ -127,7 +115,7 @@ func (e UserEdges) OidcIdentitiesOrErr() ([]*OIDCIdentity, error) {
 // ProjectUsersOrErr returns the ProjectUsers value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) ProjectUsersOrErr() ([]*UserProject, error) {
-	if e.loadedTypes[5] {
+	if e.loadedTypes[4] {
 		return e.ProjectUsers, nil
 	}
 	return nil, &NotLoadedError{edge: "project_users"}
@@ -136,7 +124,7 @@ func (e UserEdges) ProjectUsersOrErr() ([]*UserProject, error) {
 // UserRolesOrErr returns the UserRoles value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) UserRolesOrErr() ([]*UserRole, error) {
-	if e.loadedTypes[6] {
+	if e.loadedTypes[5] {
 		return e.UserRoles, nil
 	}
 	return nil, &NotLoadedError{edge: "user_roles"}
@@ -278,11 +266,6 @@ func (_m *User) QueryAPIKeys() *APIKeyQuery {
 // QueryRoles queries the "roles" edge of the User entity.
 func (_m *User) QueryRoles() *RoleQuery {
 	return NewUserClient(_m.config).QueryRoles(_m)
-}
-
-// QueryChannelOverrideTemplates queries the "channel_override_templates" edge of the User entity.
-func (_m *User) QueryChannelOverrideTemplates() *ChannelOverrideTemplateQuery {
-	return NewUserClient(_m.config).QueryChannelOverrideTemplates(_m)
 }
 
 // QueryOidcIdentities queries the "oidc_identities" edge of the User entity.
@@ -430,30 +413,6 @@ func (_m *User) appendNamedRoles(name string, edges ...*Role) {
 		_m.Edges.namedRoles[name] = []*Role{}
 	} else {
 		_m.Edges.namedRoles[name] = append(_m.Edges.namedRoles[name], edges...)
-	}
-}
-
-// NamedChannelOverrideTemplates returns the ChannelOverrideTemplates named value or an error if the edge was not
-// loaded in eager-loading with this name.
-func (_m *User) NamedChannelOverrideTemplates(name string) ([]*ChannelOverrideTemplate, error) {
-	if _m.Edges.namedChannelOverrideTemplates == nil {
-		return nil, &NotLoadedError{edge: name}
-	}
-	nodes, ok := _m.Edges.namedChannelOverrideTemplates[name]
-	if !ok {
-		return nil, &NotLoadedError{edge: name}
-	}
-	return nodes, nil
-}
-
-func (_m *User) appendNamedChannelOverrideTemplates(name string, edges ...*ChannelOverrideTemplate) {
-	if _m.Edges.namedChannelOverrideTemplates == nil {
-		_m.Edges.namedChannelOverrideTemplates = make(map[string][]*ChannelOverrideTemplate)
-	}
-	if len(edges) == 0 {
-		_m.Edges.namedChannelOverrideTemplates[name] = []*ChannelOverrideTemplate{}
-	} else {
-		_m.Edges.namedChannelOverrideTemplates[name] = append(_m.Edges.namedChannelOverrideTemplates[name], edges...)
 	}
 }
 

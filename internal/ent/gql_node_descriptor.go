@@ -11,7 +11,6 @@ import (
 	"github.com/looplj/axonhub/internal/ent/channel"
 	"github.com/looplj/axonhub/internal/ent/channelmodelprice"
 	"github.com/looplj/axonhub/internal/ent/channelmodelpriceversion"
-	"github.com/looplj/axonhub/internal/ent/channeloverridetemplate"
 	"github.com/looplj/axonhub/internal/ent/channelprobe"
 	"github.com/looplj/axonhub/internal/ent/datastorage"
 	"github.com/looplj/axonhub/internal/ent/oidcidentity"
@@ -650,100 +649,6 @@ func (_m *ChannelModelPriceVersion) Node(ctx context.Context) (node *Node, err e
 	}
 	err = _m.QueryChannelModelPrice().
 		Select(channelmodelprice.FieldID).
-		Scan(ctx, &node.Edges[0].IDs)
-	if err != nil {
-		return nil, err
-	}
-	return node, nil
-}
-
-// Node implements Noder interface
-func (_m *ChannelOverrideTemplate) Node(ctx context.Context) (node *Node, err error) {
-	node = &Node{
-		ID:     _m.ID,
-		Type:   "ChannelOverrideTemplate",
-		Fields: make([]*Field, 9),
-		Edges:  make([]*Edge, 1),
-	}
-	var buf []byte
-	if buf, err = json.Marshal(_m.CreatedAt); err != nil {
-		return nil, err
-	}
-	node.Fields[0] = &Field{
-		Type:  "time.Time",
-		Name:  "created_at",
-		Value: string(buf),
-	}
-	if buf, err = json.Marshal(_m.UpdatedAt); err != nil {
-		return nil, err
-	}
-	node.Fields[1] = &Field{
-		Type:  "time.Time",
-		Name:  "updated_at",
-		Value: string(buf),
-	}
-	if buf, err = json.Marshal(_m.UserID); err != nil {
-		return nil, err
-	}
-	node.Fields[2] = &Field{
-		Type:  "int",
-		Name:  "user_id",
-		Value: string(buf),
-	}
-	if buf, err = json.Marshal(_m.Name); err != nil {
-		return nil, err
-	}
-	node.Fields[3] = &Field{
-		Type:  "string",
-		Name:  "name",
-		Value: string(buf),
-	}
-	if buf, err = json.Marshal(_m.Description); err != nil {
-		return nil, err
-	}
-	node.Fields[4] = &Field{
-		Type:  "string",
-		Name:  "description",
-		Value: string(buf),
-	}
-	if buf, err = json.Marshal(_m.OverrideParameters); err != nil {
-		return nil, err
-	}
-	node.Fields[5] = &Field{
-		Type:  "string",
-		Name:  "override_parameters",
-		Value: string(buf),
-	}
-	if buf, err = json.Marshal(_m.OverrideHeaders); err != nil {
-		return nil, err
-	}
-	node.Fields[6] = &Field{
-		Type:  "[]objects.HeaderEntry",
-		Name:  "override_headers",
-		Value: string(buf),
-	}
-	if buf, err = json.Marshal(_m.HeaderOverrideOperations); err != nil {
-		return nil, err
-	}
-	node.Fields[7] = &Field{
-		Type:  "[]objects.OverrideOperation",
-		Name:  "header_override_operations",
-		Value: string(buf),
-	}
-	if buf, err = json.Marshal(_m.BodyOverrideOperations); err != nil {
-		return nil, err
-	}
-	node.Fields[8] = &Field{
-		Type:  "[]objects.OverrideOperation",
-		Name:  "body_override_operations",
-		Value: string(buf),
-	}
-	node.Edges[0] = &Edge{
-		Type: "User",
-		Name: "user",
-	}
-	err = _m.QueryUser().
-		Select(user.FieldID).
 		Scan(ctx, &node.Edges[0].IDs)
 	if err != nil {
 		return nil, err
@@ -2547,7 +2452,7 @@ func (_m *User) Node(ctx context.Context) (node *Node, err error) {
 		ID:     _m.ID,
 		Type:   "User",
 		Fields: make([]*Field, 11),
-		Edges:  make([]*Edge, 7),
+		Edges:  make([]*Edge, 6),
 	}
 	var buf []byte
 	if buf, err = json.Marshal(_m.CreatedAt); err != nil {
@@ -2669,42 +2574,32 @@ func (_m *User) Node(ctx context.Context) (node *Node, err error) {
 		return nil, err
 	}
 	node.Edges[3] = &Edge{
-		Type: "ChannelOverrideTemplate",
-		Name: "channel_override_templates",
-	}
-	err = _m.QueryChannelOverrideTemplates().
-		Select(channeloverridetemplate.FieldID).
-		Scan(ctx, &node.Edges[3].IDs)
-	if err != nil {
-		return nil, err
-	}
-	node.Edges[4] = &Edge{
 		Type: "OIDCIdentity",
 		Name: "oidc_identities",
 	}
 	err = _m.QueryOidcIdentities().
 		Select(oidcidentity.FieldID).
-		Scan(ctx, &node.Edges[4].IDs)
+		Scan(ctx, &node.Edges[3].IDs)
 	if err != nil {
 		return nil, err
 	}
-	node.Edges[5] = &Edge{
+	node.Edges[4] = &Edge{
 		Type: "UserProject",
 		Name: "project_users",
 	}
 	err = _m.QueryProjectUsers().
 		Select(userproject.FieldID).
-		Scan(ctx, &node.Edges[5].IDs)
+		Scan(ctx, &node.Edges[4].IDs)
 	if err != nil {
 		return nil, err
 	}
-	node.Edges[6] = &Edge{
+	node.Edges[5] = &Edge{
 		Type: "UserRole",
 		Name: "user_roles",
 	}
 	err = _m.QueryUserRoles().
 		Select(userrole.FieldID).
-		Scan(ctx, &node.Edges[6].IDs)
+		Scan(ctx, &node.Edges[5].IDs)
 	if err != nil {
 		return nil, err
 	}

@@ -13,7 +13,6 @@ import (
 	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/looplj/axonhub/internal/ent/apikey"
-	"github.com/looplj/axonhub/internal/ent/channeloverridetemplate"
 	"github.com/looplj/axonhub/internal/ent/oidcidentity"
 	"github.com/looplj/axonhub/internal/ent/predicate"
 	"github.com/looplj/axonhub/internal/ent/project"
@@ -245,21 +244,6 @@ func (_u *UserUpdate) AddRoles(v ...*Role) *UserUpdate {
 	return _u.AddRoleIDs(ids...)
 }
 
-// AddChannelOverrideTemplateIDs adds the "channel_override_templates" edge to the ChannelOverrideTemplate entity by IDs.
-func (_u *UserUpdate) AddChannelOverrideTemplateIDs(ids ...int) *UserUpdate {
-	_u.mutation.AddChannelOverrideTemplateIDs(ids...)
-	return _u
-}
-
-// AddChannelOverrideTemplates adds the "channel_override_templates" edges to the ChannelOverrideTemplate entity.
-func (_u *UserUpdate) AddChannelOverrideTemplates(v ...*ChannelOverrideTemplate) *UserUpdate {
-	ids := make([]int, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.AddChannelOverrideTemplateIDs(ids...)
-}
-
 // AddOidcIdentityIDs adds the "oidc_identities" edge to the OIDCIdentity entity by IDs.
 func (_u *UserUpdate) AddOidcIdentityIDs(ids ...int) *UserUpdate {
 	_u.mutation.AddOidcIdentityIDs(ids...)
@@ -371,27 +355,6 @@ func (_u *UserUpdate) RemoveRoles(v ...*Role) *UserUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveRoleIDs(ids...)
-}
-
-// ClearChannelOverrideTemplates clears all "channel_override_templates" edges to the ChannelOverrideTemplate entity.
-func (_u *UserUpdate) ClearChannelOverrideTemplates() *UserUpdate {
-	_u.mutation.ClearChannelOverrideTemplates()
-	return _u
-}
-
-// RemoveChannelOverrideTemplateIDs removes the "channel_override_templates" edge to ChannelOverrideTemplate entities by IDs.
-func (_u *UserUpdate) RemoveChannelOverrideTemplateIDs(ids ...int) *UserUpdate {
-	_u.mutation.RemoveChannelOverrideTemplateIDs(ids...)
-	return _u
-}
-
-// RemoveChannelOverrideTemplates removes "channel_override_templates" edges to ChannelOverrideTemplate entities.
-func (_u *UserUpdate) RemoveChannelOverrideTemplates(v ...*ChannelOverrideTemplate) *UserUpdate {
-	ids := make([]int, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.RemoveChannelOverrideTemplateIDs(ids...)
 }
 
 // ClearOidcIdentities clears all "oidc_identities" edges to the OIDCIdentity entity.
@@ -731,51 +694,6 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		createE.defaults()
 		_, specE := createE.createSpec()
 		edge.Target.Fields = specE.Fields
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if _u.mutation.ChannelOverrideTemplatesCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.ChannelOverrideTemplatesTable,
-			Columns: []string{user.ChannelOverrideTemplatesColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(channeloverridetemplate.FieldID, field.TypeInt),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.RemovedChannelOverrideTemplatesIDs(); len(nodes) > 0 && !_u.mutation.ChannelOverrideTemplatesCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.ChannelOverrideTemplatesTable,
-			Columns: []string{user.ChannelOverrideTemplatesColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(channeloverridetemplate.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.ChannelOverrideTemplatesIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.ChannelOverrideTemplatesTable,
-			Columns: []string{user.ChannelOverrideTemplatesColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(channeloverridetemplate.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if _u.mutation.OidcIdentitiesCleared() {
@@ -1143,21 +1061,6 @@ func (_u *UserUpdateOne) AddRoles(v ...*Role) *UserUpdateOne {
 	return _u.AddRoleIDs(ids...)
 }
 
-// AddChannelOverrideTemplateIDs adds the "channel_override_templates" edge to the ChannelOverrideTemplate entity by IDs.
-func (_u *UserUpdateOne) AddChannelOverrideTemplateIDs(ids ...int) *UserUpdateOne {
-	_u.mutation.AddChannelOverrideTemplateIDs(ids...)
-	return _u
-}
-
-// AddChannelOverrideTemplates adds the "channel_override_templates" edges to the ChannelOverrideTemplate entity.
-func (_u *UserUpdateOne) AddChannelOverrideTemplates(v ...*ChannelOverrideTemplate) *UserUpdateOne {
-	ids := make([]int, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.AddChannelOverrideTemplateIDs(ids...)
-}
-
 // AddOidcIdentityIDs adds the "oidc_identities" edge to the OIDCIdentity entity by IDs.
 func (_u *UserUpdateOne) AddOidcIdentityIDs(ids ...int) *UserUpdateOne {
 	_u.mutation.AddOidcIdentityIDs(ids...)
@@ -1269,27 +1172,6 @@ func (_u *UserUpdateOne) RemoveRoles(v ...*Role) *UserUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveRoleIDs(ids...)
-}
-
-// ClearChannelOverrideTemplates clears all "channel_override_templates" edges to the ChannelOverrideTemplate entity.
-func (_u *UserUpdateOne) ClearChannelOverrideTemplates() *UserUpdateOne {
-	_u.mutation.ClearChannelOverrideTemplates()
-	return _u
-}
-
-// RemoveChannelOverrideTemplateIDs removes the "channel_override_templates" edge to ChannelOverrideTemplate entities by IDs.
-func (_u *UserUpdateOne) RemoveChannelOverrideTemplateIDs(ids ...int) *UserUpdateOne {
-	_u.mutation.RemoveChannelOverrideTemplateIDs(ids...)
-	return _u
-}
-
-// RemoveChannelOverrideTemplates removes "channel_override_templates" edges to ChannelOverrideTemplate entities.
-func (_u *UserUpdateOne) RemoveChannelOverrideTemplates(v ...*ChannelOverrideTemplate) *UserUpdateOne {
-	ids := make([]int, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.RemoveChannelOverrideTemplateIDs(ids...)
 }
 
 // ClearOidcIdentities clears all "oidc_identities" edges to the OIDCIdentity entity.
@@ -1659,51 +1541,6 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 		createE.defaults()
 		_, specE := createE.createSpec()
 		edge.Target.Fields = specE.Fields
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if _u.mutation.ChannelOverrideTemplatesCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.ChannelOverrideTemplatesTable,
-			Columns: []string{user.ChannelOverrideTemplatesColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(channeloverridetemplate.FieldID, field.TypeInt),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.RemovedChannelOverrideTemplatesIDs(); len(nodes) > 0 && !_u.mutation.ChannelOverrideTemplatesCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.ChannelOverrideTemplatesTable,
-			Columns: []string{user.ChannelOverrideTemplatesColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(channeloverridetemplate.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.ChannelOverrideTemplatesIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.ChannelOverrideTemplatesTable,
-			Columns: []string{user.ChannelOverrideTemplatesColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(channeloverridetemplate.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if _u.mutation.OidcIdentitiesCleared() {

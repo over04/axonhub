@@ -116,42 +116,6 @@ func (r *channelResolver) LiveLimiterStats(ctx context.Context, obj *ent.Channel
 	}, nil
 }
 
-// HeaderOverrideOperations is the resolver for the headerOverrideOperations field.
-func (r *channelSettingsResolver) HeaderOverrideOperations(ctx context.Context, obj *objects.ChannelSettings) ([]*objects.OverrideOperation, error) {
-	if obj == nil {
-		return []*objects.OverrideOperation{}, nil
-	}
-
-	if obj.HeaderOverrideOperations != nil {
-		return lo.ToSlicePtr(obj.HeaderOverrideOperations), nil
-	}
-
-	// Backward compatibility.
-	ops := objects.HeaderEntriesToOverrideOperations(obj.OverrideHeaders)
-
-	return lo.ToSlicePtr(ops), nil
-}
-
-// BodyOverrideOperations is the resolver for the bodyOverrideOperations field.
-func (r *channelSettingsResolver) BodyOverrideOperations(ctx context.Context, obj *objects.ChannelSettings) ([]*objects.OverrideOperation, error) {
-	if obj == nil {
-		return []*objects.OverrideOperation{}, nil
-	}
-
-	if obj.BodyOverrideOperations != nil {
-		return lo.ToSlicePtr(obj.BodyOverrideOperations), nil
-	}
-
-	// Backward compatibility.
-	ops, err := objects.ParseOverrideOperations(obj.OverrideParameters)
-	if err != nil {
-		//nolint:nilerr // Checked.
-		return []*objects.OverrideOperation{}, nil
-	}
-
-	return lo.ToSlicePtr(ops), nil
-}
-
 // CreateChannel is the resolver for the createChannel field.
 func (r *mutationResolver) CreateChannel(ctx context.Context, input ent.CreateChannelInput) (*ent.Channel, error) {
 	return r.channelService.CreateChannel(ctx, input)
@@ -548,72 +512,6 @@ func (r *mutationResolver) UpdateDataStorage(ctx context.Context, id objects.GUI
 	return r.dataStorageService.UpdateDataStorage(ctx, id.ID, &input)
 }
 
-// CreateChannelOverrideTemplate is the resolver for the createChannelOverrideTemplate field.
-func (r *mutationResolver) CreateChannelOverrideTemplate(ctx context.Context, input ent.CreateChannelOverrideTemplateInput) (*ent.ChannelOverrideTemplate, error) {
-	user, ok := contexts.GetUser(ctx)
-	if !ok {
-		return nil, fmt.Errorf("user not found in context")
-	}
-
-	return r.channelOverrideTemplateService.CreateTemplate(ctx, user.ID, input)
-}
-
-// UpdateChannelOverrideTemplate is the resolver for the updateChannelOverrideTemplate field.
-func (r *mutationResolver) UpdateChannelOverrideTemplate(ctx context.Context, id objects.GUID, input ent.UpdateChannelOverrideTemplateInput) (*ent.ChannelOverrideTemplate, error) {
-	return r.channelOverrideTemplateService.UpdateTemplate(ctx, id.ID, input)
-}
-
-// DeleteChannelOverrideTemplate is the resolver for the deleteChannelOverrideTemplate field.
-func (r *mutationResolver) DeleteChannelOverrideTemplate(ctx context.Context, id objects.GUID) (bool, error) {
-	if err := r.channelOverrideTemplateService.DeleteTemplate(ctx, id.ID); err != nil {
-		return false, err
-	}
-
-	return true, nil
-}
-
-// ApplyChannelOverrideTemplate is the resolver for the applyChannelOverrideTemplate field.
-func (r *mutationResolver) ApplyChannelOverrideTemplate(ctx context.Context, input ApplyChannelOverrideTemplateInput) (*ApplyChannelOverrideTemplatePayload, error) {
-	channelIDs := objects.IntGuids(input.ChannelIDs)
-
-	mode := biz.ApplyTemplateModeMerge
-	if input.Mode != nil && *input.Mode == OverrideApplyModeReplace {
-		mode = biz.ApplyTemplateModeReplace
-	}
-
-	updatedChannels, err := r.channelOverrideTemplateService.ApplyTemplate(
-		ctx,
-		input.TemplateID.ID,
-		channelIDs,
-		mode,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to apply template: %w", err)
-	}
-
-	return &ApplyChannelOverrideTemplatePayload{
-		Success:  true,
-		Updated:  len(updatedChannels),
-		Channels: updatedChannels,
-	}, nil
-}
-
-// ClearChannelOverrideTemplates is the resolver for the clearChannelOverrideTemplates field.
-func (r *mutationResolver) ClearChannelOverrideTemplates(ctx context.Context, input ClearChannelOverrideTemplatesInput) (*ClearChannelOverrideTemplatesPayload, error) {
-	channelIDs := objects.IntGuids(input.ChannelIDs)
-
-	updatedChannels, err := r.channelOverrideTemplateService.ClearTemplates(ctx, channelIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to clear templates: %w", err)
-	}
-
-	return &ClearChannelOverrideTemplatesPayload{
-		Success:  true,
-		Updated:  len(updatedChannels),
-		Channels: updatedChannels,
-	}, nil
-}
-
 // SyncChannelModels is the resolver for the syncChannelModels field.
 func (r *mutationResolver) SyncChannelModels(ctx context.Context, channelID objects.GUID, pattern *string) (*SyncChannelModelsPayload, error) {
 	ch, err := r.channelService.SyncChannelModels(ctx, channelID.ID, pattern)
@@ -837,15 +735,11 @@ func (r *traceResolver) UsageMetadata(ctx context.Context, obj *ent.Trace) (*biz
 	return r.traceService.UsageMetadata(ctx, obj.ID)
 }
 
-// ChannelSettings returns ChannelSettingsResolver implementation.
-func (r *Resolver) ChannelSettings() ChannelSettingsResolver { return &channelSettingsResolver{r} }
-
 // Mutation returns MutationResolver implementation.
 func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
 
 // Segment returns SegmentResolver implementation.
 func (r *Resolver) Segment() SegmentResolver { return &segmentResolver{r} }
 
-type channelSettingsResolver struct{ *Resolver }
 type mutationResolver struct{ *Resolver }
 type segmentResolver struct{ *Resolver }

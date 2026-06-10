@@ -23,8 +23,6 @@ type ChannelsDialogType =
   | 'bulkEnable'
   | 'bulkTest'
   | 'bulkDelete'
-  | 'bulkApplyTemplate'
-  | 'bulkClearTemplate'
   | 'errorResolved'
   | 'viewModels'
   | 'price'

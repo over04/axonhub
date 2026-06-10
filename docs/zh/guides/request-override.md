@@ -1,366 +1,279 @@
-# 请求重写 (Request Override) 指南
+# 参数覆盖指南
 
-请求重写是 AxonHub 的一项强大功能，允许你在请求发送到 AI 提供商之前，动态地修改请求体 (Body) 和请求头 (Headers)。这在处理特定模型的参数调整、功能映射（如 `reasoning_effort`）或注入自定义元数据时非常有用。
+参数覆盖是渠道级功能，用于在请求发送给上游服务商前改写出站请求。唯一配置入口是 `settings.paramOverride`，内容是一个包含 `operations` 数组的 JSON 对象。
 
-## 核心概念
+请求体修改和请求头修改都写在同一个参数覆盖文档里。独立的请求头覆盖配置已经删除。
 
-重写是在 **渠道 (Channel)** 级别配置的。主要分为两种类型：
-1. **重写参数 (Override Parameters)**：修改 JSON 请求体。
-2. **重写请求头 (Override Headers)**：修改 HTTP 请求头。
-
-### 模板渲染
-
-AxonHub 使用 Go 模板 (Go templates) 进行动态值渲染。你可以在模板中使用以下变量：
-
-| 变量 | 描述 | 示例 |
-| :--- | :--- | :--- |
-| `.RequestModel` | 来自客户端原始请求的模型名称。 | `{{.RequestModel}}` |
-| `.Model` | 当前请求中的模型名称（可能经过了模型映射）。 | `{{.Model}}` |
-| `.ReasoningEffort` | `reasoning_effort` 的值 (none, low, medium, high)。 | `{{.ReasoningEffort}}` |
-| `.Metadata` | 请求中传递的自定义元数据 Map。 | `{{index .Metadata "user_id"}}` |
-| `.RequestHeader` | 过滤后的客户端入站请求头。支持规范写法/小写查找，并返回第一个值。 | `{{index .RequestHeader "X-Trace-Id"}}` |
-
-## 重写操作类型
-
-AxonHub 支持以下重写操作：
-
-| 操作类型 | 描述 | 适用场景 |
-| :--- | :--- | :--- |
-| `set` | 设置字段值，如果字段不存在则创建 | 修改或添加参数 |
-| `delete` | 删除指定字段 | 移除不需要的参数 |
-| `rename` | 重命名字段（从 `from` 移动到 `to`） | 字段名映射转换 |
-| `copy` | 复制字段值（从 `from` 复制到 `to`） | 参数复用 |
-| `array_append` | 把值追加到 `path` 数组的末尾 | 在原有数组内容之后注入 |
-| `array_prepend` | 把值追加到 `path` 数组的开头 | 在原有数组内容之前注入 |
-| `array_insert` | 把值插入到 `path` 数组的指定位置 | 在任意位置插入元素 |
-
-> 数组操作仅适用于请求体。请求头只支持 `set`、`delete`、`rename`、`copy`。
-
-## 重写参数 (Override Parameters)
-
-重写参数定义为一个操作数组，每个操作包含以下字段：
-
-| 字段 | 类型 | 必需 | 描述 |
-| :--- | :--- | :--- | :--- |
-| `op` | string | 是 | 操作类型：`set`、`delete`、`rename`、`copy`、`array_append`、`array_prepend`、`array_insert` |
-| `path` | string | 条件 | 目标字段路径（`set`、`delete` 以及所有数组操作必需） |
-| `from` | string | 条件 | 源字段路径（`rename` 和 `copy` 必需） |
-| `to` | string | 条件 | 目标字段路径（`rename` 和 `copy` 必需） |
-| `value` | string | 条件 | 字段值（`set` 和所有数组操作必需），支持模板 |
-| `condition` | string | 否 | 条件表达式，结果为 `"true"` 时执行 |
-| `index` | number | 条件 | 插入位置（`array_insert` 必需），支持负数表示从末尾倒数；越界会被夹紧到 `[0, len]` |
-| `splat` | bool | 否 | 当渲染后的值是 JSON 数组时，是否将其元素展开插入到目标数组。默认 `true`。设为 `false` 则把整个数组作为单个嵌套元素插入。仅对数组操作生效。 |
-
-### 基础示例
-
-```json
-[
-  {
-    "op": "set",
-    "path": "temperature",
-    "value": "0.7"
-  },
-  {
-    "op": "set",
-    "path": "max_tokens",
-    "value": "2000"
-  },
-  {
-    "op": "delete",
-    "path": "frequency_penalty"
-  }
-]
-```
-
-### 使用模板
-
-你可以使用模板使参数根据输入请求动态变化：
-
-```json
-[
-  {
-    "op": "set",
-    "path": "custom_field",
-    "value": "model-{{.Model}}"
-  },
-  {
-    "op": "set",
-    "path": "effort_level",
-    "value": "effort-{{.ReasoningEffort}}"
-  },
-  {
-    "op": "set",
-    "path": "user_context",
-    "value": "user-{{index .Metadata \"user_id\"}}"
-  },
-  {
-    "op": "set",
-    "path": "trace_id",
-    "value": "{{index .RequestHeader \"x-trace-id\"}}"
-  }
-]
-```
-
-### 条件执行
-
-使用 `condition` 字段实现条件逻辑：
-
-```json
-[
-  {
-    "op": "set",
-    "path": "top_k",
-    "value": "40",
-    "condition": "{{eq .Model \"claude-3-opus-20240229\"}}"
-  },
-  {
-    "op": "set",
-    "path": "logic_field",
-    "value": "premium-mode",
-    "condition": "{{eq .Model \"gpt-4o\"}}"
-  },
-  {
-    "op": "set",
-    "path": "logic_field",
-    "value": "standard-mode",
-    "condition": "{{ne .Model \"gpt-4o\"}}"
-  }
-]
-```
-
-### 字段重命名与复制
-
-```json
-[
-  {
-    "op": "rename",
-    "from": "old_field_name",
-    "to": "new_field_name"
-  },
-  {
-    "op": "copy",
-    "from": "model",
-    "to": "custom_model_header"
-  }
-]
-```
-
-### 数组操作
-
-数组操作允许你向已有数组（如 `system`、`messages`、`tools`）注入元素，**不会替换整个数组**。当你想保留客户端原有的内容、同时在前后插入网关侧的内容时，使用这些操作。
-
-**行为说明：**
-- 如果 `path` 不存在，会以提供的值创建一个新数组。
-- 如果 `path` 存在但不是数组，操作会被跳过并记录警告日志。
-- 如果渲染后的 `value` 是一个 JSON 数组，并且 `splat` 为 `true`（默认值），其中的元素会被展开插入到目标数组；将 `splat` 设为 `false` 可把整个数组作为单个嵌套元素插入。
-- 对 `array_insert`，`index` 支持负数（从末尾倒数）。`index = -1` 表示插入到最后一个元素之前。越界值会被夹紧到 `[0, len]`。
-
-**追加单个对象到末尾：**
-
-```json
-[
-  {
-    "op": "array_append",
-    "path": "messages",
-    "value": "{\"role\":\"system\",\"content\":\"appended note\"}"
-  }
-]
-```
-
-**在数组开头注入多个 system 项（保留用户原有内容）：**
-
-```json
-[
-  {
-    "op": "array_prepend",
-    "path": "system",
-    "value": "[{\"type\":\"text\",\"text\":\"x-anthropic-billing-header: ...\"},{\"type\":\"text\",\"text\":\"You are Claude Code...\",\"cache_control\":{\"type\":\"ephemeral\"}}]"
-  }
-]
-```
-
-假设原始请求是 `system: [{"type":"text","text":"<user>"}]`，最终结果：
+## 配置格式
 
 ```json
 {
-  "system": [
-    {"type": "text", "text": "x-anthropic-billing-header: ..."},
-    {"type": "text", "text": "You are Claude Code...", "cache_control": {"type": "ephemeral"}},
-    {"type": "text", "text": "<user>"}
+  "operations": [
+    {
+      "mode": "set",
+      "path": "temperature",
+      "value": 0.7,
+      "conditions": [
+        { "path": "model", "mode": "prefix", "value": "openai/" }
+      ],
+      "logic": "AND"
+    }
   ]
 }
 ```
 
-**插入到指定位置：**
+`operations` 按顺序执行。`logic: "AND"` 表示全部条件通过时执行，`logic: "OR"` 表示任一条件通过时执行。未设置 `logic` 时默认 `OR`。未设置 `conditions` 时规则总是执行。
 
-```json
-[
-  {
-    "op": "array_insert",
-    "path": "messages",
-    "index": 1,
-    "value": "{\"role\":\"system\",\"content\":\"inserted between message 0 and 1\"}"
-  }
-]
-```
+## 变量作用域
 
-**把数组作为单个嵌套元素插入（关闭 splat）：**
+同一个参数覆盖文档里的所有字符串共享同一套占位符语法。作用范围包括请求体规则、请求头规则、条件值、`from`、`to`、对象值和数组值。
 
-```json
-[
-  {
-    "op": "array_prepend",
-    "path": "tags",
-    "value": "[\"a\",\"b\"]",
-    "splat": false
-  }
-]
-```
+| 占位符 | 作用域 | 含义 |
+| :--- | :--- | :--- |
+| `{model}` | 请求体和请求头规则 | 当前渠道选中的上游模型。缺少上游模型时回退为原始模型。 |
+| `{upstream_model}` | 请求体和请求头规则 | 已选渠道候选存在时，与 `{model}` 相同。 |
+| `{original_model}` | 请求体和请求头规则 | 客户端原始请求中的模型，早于渠道模型映射。 |
+| `{request_path}` | 请求体和请求头规则 | 当前请求路径，存在时可用。 |
+| `{api_key}` | 请求体和请求头规则 | 当前渠道执行选中的上游 API key。 |
+| `{retry_index}` | 请求体和请求头规则 | 当前重试序号，从 `0` 开始。 |
+| `{is_retry}` | 请求体和请求头规则 | `retry_index > 0` 时为 `true`，否则为 `false`。 |
+| `{last_error_status_code}` | 请求体和请求头规则 | 上一次失败尝试的 HTTP 状态码，仅重试时可用。 |
+| `{last_error_message}` | 请求体和请求头规则 | 上一次失败尝试的原始响应体，仅重试时可用。 |
+| `{client_header:Name}` | 请求体和请求头规则 | 客户端原始入站请求头 `Name` 的值。请求头查找大小写不敏感，缺失时解析为空字符串。 |
+| `{request_header:Name}` | 请求体和请求头规则 | 当前运行时请求头 `Name`，缺失时回退到客户端原始入站请求头 `Name`。 |
+| `{header:Name}` | 请求体和请求头规则 | `{request_header:Name}` 的别名。 |
+| `{retry.index}` | 请求体和请求头规则 | 从运行时上下文读取嵌套路径，等价于 `{retry_index}`。 |
 
-对 `{"tags": ["x"]}` 执行后结果为：`{"tags": [["a","b"], "x"]}`。
+`request_headers` 上下文保存客户端原始入站请求头，请求头名称为小写。`runtime_request_headers` 上下文保存参数覆盖执行过程中由 `set_header`、`pass_headers`、`copy_header`、`move_header`、`sync_fields` 暂存的出站请求头。
 
-### 动态 JSON 对象
+## 路径和匹配范围
 
-如果渲染后的模板字符串是一个有效的 JSON 对象或数组，AxonHub 会自动解析它，并将其作为结构化的 JSON 对象插入，而不是作为字符串：
+请求体路径使用点号语法。通配符 `*` 会展开匹配对象 key 或数组索引。数组路径支持 `.-1`、`.-2` 这类负索引。
 
-```json
-[
-  {
-    "op": "set",
-    "path": "settings",
-    "value": "{\"id\": \"{{.Model}}\", \"enabled\": true}"
-  }
-]
-```
+| 路径 | 范围 |
+| :--- | :--- |
+| `temperature` | 顶层字段。 |
+| `messages.0.content` | 第一条消息的 `content`。 |
+| `messages.-1.content` | 最后一条消息的 `content`。 |
+| `tools.*.enabled` | 所有 tool 项的 `enabled` 字段。 |
 
-*结果 Body:* `{"settings": {"id": "gpt-4o", "enabled": true}}`
+请求头名称大小写不敏感，内部统一为小写。最终 HTTP 出站请求头由 Go `http.Header` 写入，线上的大小写由 HTTP 栈规范化。
 
-### 删除字段
+## 条件
 
-使用 `delete` 操作删除指定字段：
+条件既能读取请求体字段，也能读取运行时上下文变量。读取顺序是请求体优先；请求体路径缺失时读取运行时上下文。
 
-```json
-[
-  {
-    "op": "delete",
-    "path": "frequency_penalty"
-  }
-]
-```
-
-## 重写请求头 (Override Headers)
-
-重写请求头使用与重写参数相同的操作格式：
-
-```json
-[
-  {
-    "op": "set",
-    "path": "X-Custom-Model",
-    "value": "{{.Model}}"
-  },
-  {
-    "op": "set",
-    "path": "X-User-ID",
-    "value": "{{index .Metadata \"user_id\"}}"
-  },
-  {
-    "op": "set",
-    "path": "X-Trace-Id",
-    "value": "{{index .RequestHeader \"x-trace-id\"}}"
-  },
-  {
-    "op": "delete",
-    "path": "X-Internal-Header"
-  },
-  {
-    "op": "rename",
-    "from": "Old-Header",
-    "to": "New-Header"
-  }
-]
-```
-
-## 常见用例
-
-### 1. 映射推理强度 (Reasoning Effort)
-
-如果提供商使用不同的字段名或值来表示推理强度：
-
-```json
-[
-  {
-    "op": "set",
-    "path": "provider_specific_effort",
-    "value": "max",
-    "condition": "{{eq .ReasoningEffort \"high\"}}"
-  },
-  {
-    "op": "set",
-    "path": "provider_specific_effort",
-    "value": "normal",
-    "condition": "{{ne .ReasoningEffort \"high\"}}"
-  }
-]
-```
-
-### 2. 特定模型参数
-
-某些模型可能需要 OpenAI/Anthropic 标准 API 之外的特定参数：
-
-```json
-[
-  {
-    "op": "set",
-    "path": "top_k",
-    "value": "40",
-    "condition": "{{eq .Model \"claude-3-opus-20240229\"}}"
-  }
-]
-```
-
-### 3. 在请求头中注入元数据
-
-将内部追踪 ID 传递给提供商以便调试：
-
-```json
-[
-  {
-    "op": "set",
-    "path": "X-Request-Source",
-    "value": "axonhub-gateway"
-  },
-  {
-    "op": "set",
-    "path": "X-Internal-User",
-    "value": "{{index .Metadata \"internal_id\"}}"
-  }
-]
-```
-
-## 向后兼容
-
-AxonHub 仍然支持旧版的重写参数格式（JSON 对象），系统会自动将其转换为新的操作格式：
-
-**旧版格式（仍支持）：**
 ```json
 {
-  "temperature": 0.7,
-  "max_tokens": 2000
+  "mode": "set",
+  "path": "temperature",
+  "value": 0,
+  "logic": "AND",
+  "conditions": [
+    { "path": "retry_index", "mode": "gte", "value": 1 },
+    { "path": "last_error_status_code", "mode": "full", "value": 429 }
+  ]
 }
 ```
 
-这会等效转换为：
+条件字段：
+
+| 字段 | 必填 | 范围 |
+| :--- | :--- | :--- |
+| `path` | 是 | 先读请求体路径，再读运行时上下文路径。 |
+| `mode` | 是 | `full`、`prefix`、`suffix`、`contains`、`gt`、`gte`、`lt`、`lte`。 |
+| `value` | 否 | 比较值。比较前会解析占位符变量。 |
+| `invert` | 否 | 反转比较结果。 |
+| `pass_missing_key` | 否 | 路径缺失时视为条件通过。 |
+
+数值比较模式要求两侧都是数字。
+
+## 请求体操作
+
+这些操作修改 JSON 请求体。
+
+| Mode | 必填字段 | 效果 |
+| :--- | :--- | :--- |
+| `set` | `path`, `value` | 将 `value` 写入 `path`。缺失字段会创建。`keep_origin: true` 表示目标已存在时跳过。 |
+| `delete` | `path` | 删除 `path`。 |
+| `append` | `path`, `value` | 对数组追加元素，对字符串追加文本，对对象合并字段。 |
+| `prepend` | `path`, `value` | 对数组前置元素，对字符串前置文本，对对象合并字段。 |
+| `copy` | `from`, `to` | 将请求体值从 `from` 复制到 `to`。 |
+| `move` | `from`, `to` | 将请求体值从 `from` 移动到 `to`。 |
+| `replace` | `path`, `from`, `to` | 对目标字符串执行普通字符串替换。 |
+| `regex_replace` | `path`, `from`, `to` | 对目标字符串执行正则替换。 |
+| `trim_prefix` | `path`, `value` | 删除字符串前缀。 |
+| `trim_suffix` | `path`, `value` | 删除字符串后缀。 |
+| `ensure_prefix` | `path`, `value` | 缺少前缀时添加前缀。 |
+| `ensure_suffix` | `path`, `value` | 缺少后缀时添加后缀。 |
+| `trim_space` | `path` | 删除字符串首尾空白。 |
+| `to_lower` | `path` | 将字符串转为小写。 |
+| `to_upper` | `path` | 将字符串转为大写。 |
+| `prune_objects` | `value`；`path` 可选 | 从整个请求体或 `path` 指定节点中移除匹配对象。 |
+| `return_error` | `value` | 停止执行，并向客户端返回自定义 HTTP 错误。 |
+
+## 请求头操作
+
+这些操作作为参数覆盖的一部分修改出站请求头。它们没有单独的配置字段。
+
+| Mode | 必填字段 | 效果 |
+| :--- | :--- | :--- |
+| `pass_headers` | `value` | 将客户端原始入站请求头复制到出站请求。`value` 可以是逗号分隔字符串、JSON 数组，或包含 `headers`、`names`、`header` 的对象。 |
+| `set_header` | `path`, `value` | 设置出站请求头。解析后为空字符串时移除暂存请求头。`keep_origin: true` 表示已存在暂存值时保留原值。 |
+| `delete_header` | `path` | 删除暂存出站请求头。 |
+| `copy_header` | `from`, `to` | 从运行时/原始请求头上下文复制请求头到暂存出站请求头。 |
+| `move_header` | `from`, `to` | 复制请求头并删除源暂存请求头。 |
+| `sync_fields` | `from`, `to` | 在请求体和请求头之间同步值；仅在一侧存在、另一侧缺失时写入。使用 `json:path` 或 `header:name`。缺少前缀时表示 `json`。 |
+
+请求头操作在请求体覆盖阶段执行，结果先写入 `runtime_request_headers`；鉴权请求头完成后，再写入真实出站 HTTP 请求。
+
+## 请求头映射值
+
+`set_header` 的 `value` 可以是字符串，也可以是映射对象。字符串值支持与请求体相同的占位符。
+
 ```json
-[
-  {"op": "set", "path": "temperature", "value": "0.7"},
-  {"op": "set", "path": "max_tokens", "value": "2000"}
-]
+{
+  "mode": "set_header",
+  "path": "X-Client",
+  "value": "{client_header:X-Client}"
+}
 ```
 
-## 注意事项与限制
+映射对象用于处理 `anthropic-beta` 这类逗号分隔 token 的请求头。
 
-- **Stream 参数**: 请求体中的 `stream` 参数无法被重写，因为它由 AxonHub 的流水线统一管理。
-- **请求头安全**: 在重写 `Authorization` 等安全敏感的请求头时请务必小心。
-- **无效模板**: 如果模板解析或执行失败，将使用原始值，并记录警告日志。
-- **执行顺序**: 操作按数组顺序执行，后续操作可以覆盖前面的操作结果。
+```json
+{
+  "mode": "set_header",
+  "path": "anthropic-beta",
+  "value": {
+    "advanced-tool-use-2025-11-20": "tool-search-tool-2025-10-19",
+    "bash_20250124": null,
+    "$append": ["context-1m-2025-08-07"]
+  }
+}
+```
+
+映射 key 匹配现有逗号分隔 token。字符串替换会插入替换 token。`null` 会删除 token。`$append` 会追加 token。`$keep_only_declared: true` 会删除映射中未声明的源 token。
+
+## `prune_objects`
+
+`prune_objects` 会删除符合条件的对象。`path` 为空时搜索整个请求体；`path` 有值时只搜索该请求体节点。
+
+简单写法：
+
+```json
+{
+  "mode": "prune_objects",
+  "path": "messages",
+  "value": "redacted_thinking"
+}
+```
+
+高级写法：
+
+```json
+{
+  "mode": "prune_objects",
+  "path": "messages",
+  "value": {
+    "type": "debug",
+    "logic": "AND",
+    "recursive": true,
+    "conditions": [
+      { "path": "source", "mode": "full", "value": "internal" }
+    ],
+    "where": {
+      "type": "debug"
+    }
+  }
+}
+```
+
+`type` 等价于 `{ "path": "type", "mode": "full" }` 条件。`where` 是精确匹配条件的简写。`recursive: false` 表示只检查当前层。
+
+## `return_error`
+
+`return_error` 会立即停止请求处理，并返回 OpenAI 兼容错误体。
+
+```json
+{
+  "mode": "return_error",
+  "value": {
+    "message": "blocked by policy",
+    "status_code": 403,
+    "code": "blocked_by_rule",
+    "type": "invalid_request_error",
+    "skip_retry": true
+  }
+}
+```
+
+`value` 也可以是字符串，此时字符串就是错误消息。`status_code` 默认 `400`；`code` 默认 `invalid_request`；`type` 默认 `invalid_request_error`；`skip_retry` 默认 `true`。
+
+## 示例
+
+同时把客户端请求头写入请求体和出站请求头：
+
+```json
+{
+  "operations": [
+    {
+      "mode": "set",
+      "path": "metadata.trace_id",
+      "value": "{client_header:X-Trace-Id}"
+    },
+    {
+      "mode": "set_header",
+      "path": "X-Trace-Id",
+      "value": "{client_header:X-Trace-Id}"
+    }
+  ]
+}
+```
+
+透传 Claude/Codex CLI 请求头：
+
+```json
+{
+  "operations": [
+    {
+      "mode": "pass_headers",
+      "value": ["User-Agent", "X-App", "Anthropic-Beta", "X-Codex-Beta-Features"],
+      "keep_origin": true
+    }
+  ]
+}
+```
+
+把请求体 metadata 同步到请求头：
+
+```json
+{
+  "operations": [
+    {
+      "mode": "sync_fields",
+      "from": "json:metadata.trace_id",
+      "to": "header:X-Trace-Id"
+    }
+  ]
+}
+```
+
+重试时修改参数：
+
+```json
+{
+  "operations": [
+    {
+      "mode": "set",
+      "path": "temperature",
+      "value": 0,
+      "logic": "AND",
+      "conditions": [
+        { "path": "is_retry", "mode": "full", "value": true },
+        { "path": "last_error_status_code", "mode": "gte", "value": 500 }
+      ]
+    }
+  ]
+}
+```

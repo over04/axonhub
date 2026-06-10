@@ -635,8 +635,7 @@ func TestChatCompletionOrchestrator_Process_WithModelMapping(t *testing.T) {
 	assert.Equal(t, "gpt-4", dbRequest.ModelID)
 }
 
-// TestChatCompletionOrchestrator_Process_WithOverrideParameters tests channel override parameters.
-func TestChatCompletionOrchestrator_Process_WithOverrideParameters(t *testing.T) {
+func TestChatCompletionOrchestrator_Process_WithParamOverride(t *testing.T) {
 	ctx := context.Background()
 	ctx = authz.WithTestBypass(ctx)
 
@@ -648,7 +647,6 @@ func TestChatCompletionOrchestrator_Process_WithOverrideParameters(t *testing.T)
 	// Setup
 	project := createTestProject(t, ctx, client)
 
-	// Create channel with override parameters
 	ch, err := client.Channel.Create().
 		SetType(channel.TypeOpenai).
 		SetName("Test Channel with Overrides").
@@ -657,7 +655,12 @@ func TestChatCompletionOrchestrator_Process_WithOverrideParameters(t *testing.T)
 		SetSupportedModels([]string{"gpt-4"}).
 		SetDefaultTestModel("gpt-4").
 		SetSettings(&objects.ChannelSettings{
-			OverrideParameters: `{"temperature": 0.9, "max_tokens": 2000}`,
+			ParamOverride: `{
+				"operations": [
+					{"mode": "set", "path": "temperature", "value": 0.9},
+					{"mode": "set", "path": "max_tokens", "value": 2000}
+				]
+			}`,
 		}).
 		Save(ctx)
 	require.NoError(t, err)

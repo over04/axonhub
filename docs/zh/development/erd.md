@@ -190,33 +190,6 @@ AxonHub 采用多层级的权限管理架构，支持 Global（全局）和 Proj
 
 ---
 
-### 6. Channel Override Template（渠道覆盖模板）
-
-**描述**：用户定义的模板，用于覆盖渠道请求参数和请求头。
-
-**层级**：User（每个用户私有）
-
-**字段**：
-- `id`: 模板唯一标识
-- `user_id`: 所有者用户 ID（不可变）
-- `name`: 模板名称（对每个用户和渠道类型唯一）
-- `description`: 模板描述
-- `channel_type`: 模板适用的渠道类型
-- `override_parameters`: 覆盖请求体参数（JSON 字符串）
-- `override_headers`: 覆盖请求头（JSON 数组）
-- `created_at`: 创建时间
-- `updated_at`: 更新时间
-- `deleted_at`: 软删除时间
-
-**权限**：
-- 用户只能访问自己的模板
-- Owner 可以访问所有模板
-
-**关联关系**：
-- 属于一个 User
-
----
-
 ### 7. Data Storage（数据存储）
 
 **描述**：数据存储配置，用于存储请求/响应数据（数据库、文件系统、S3、GCS）。
@@ -556,8 +529,6 @@ erDiagram
     UsageLog }o--|| Request : "records"
     UsageLog }o--o| Channel : "uses"
 
-    User ||--o{ ChannelOverrideTemplate : "creates"
-
     Role ||--o{ RoleScope : "contains"
 
     AxonHub {    }
@@ -596,13 +567,6 @@ erDiagram
         uuid channel_id FK
         int success_rate
         int avg_latency_ms
-    }
-
-    ChannelOverrideTemplate {
-        uuid id PK
-        uuid user_id FK
-        string name
-        string channel_type
     }
 
     DataStorage {
@@ -730,8 +694,6 @@ Project
 - **User** → **Projects** (多对多)：用户可以加入多个项目
 - **User** → **Roles** (多对多)：用户可以拥有多个角色（Global 和 Project）
 - **User** → **API Keys** (一对多)：用户可以创建多个 API Keys
-- **User** → **Channel Override Templates** (一对多)：用户可以创建多个模板
-
 #### Project 关联
 - **Project** → **Users** (多对多)：项目包含多个用户
 - **Project** → **Roles** (一对多)：项目包含多个项目级角色

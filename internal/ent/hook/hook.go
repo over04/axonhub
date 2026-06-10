@@ -69,18 +69,6 @@ func (f ChannelModelPriceVersionFunc) Mutate(ctx context.Context, m ent.Mutation
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ChannelModelPriceVersionMutation", m)
 }
 
-// The ChannelOverrideTemplateFunc type is an adapter to allow the use of ordinary
-// function as ChannelOverrideTemplate mutator.
-type ChannelOverrideTemplateFunc func(context.Context, *ent.ChannelOverrideTemplateMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f ChannelOverrideTemplateFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.ChannelOverrideTemplateMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ChannelOverrideTemplateMutation", m)
-}
-
 // The ChannelProbeFunc type is an adapter to allow the use of ordinary
 // function as ChannelProbe mutator.
 type ChannelProbeFunc func(context.Context, *ent.ChannelProbeMutation) (ent.Value, error)

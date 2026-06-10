@@ -130,14 +130,12 @@ func buildChannel(c *ent.Channel, httpClient *httpclient.HttpClient) *Channel {
 
 	// Precompute other caches
 	entries := ch.GetModelEntries()
-	headers := ch.GetHeaderOverrideOperations()
-	params := ch.GetBodyOverrideOperations()
+	params := ch.GetParamOverrideMap()
 
 	if log.DebugEnabled(context.Background()) {
 		log.Debug(context.Background(), "pre cached settings",
 			log.String("channel", ch.Name),
 			log.Int("entries", len(entries)),
-			log.Int("headers", len(headers)),
 			log.Int("params", len(params)),
 		)
 	}

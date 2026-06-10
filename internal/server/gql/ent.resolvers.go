@@ -13,7 +13,6 @@ import (
 	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/log"
 	"github.com/looplj/axonhub/internal/objects"
-	"github.com/samber/lo"
 )
 
 // ID is the resolver for the id field.
@@ -121,66 +120,6 @@ func (r *channelModelPriceVersionResolver) ChannelModelPriceID(ctx context.Conte
 		Type: ent.TypeChannelModelPrice,
 		ID:   obj.ChannelModelPriceID,
 	}, nil
-}
-
-// ID is the resolver for the id field.
-func (r *channelOverrideTemplateResolver) ID(ctx context.Context, obj *ent.ChannelOverrideTemplate) (*objects.GUID, error) {
-	return &objects.GUID{
-		Type: ent.TypeChannelOverrideTemplate,
-		ID:   obj.ID,
-	}, nil
-}
-
-// UserID is the resolver for the userID field.
-func (r *channelOverrideTemplateResolver) UserID(ctx context.Context, obj *ent.ChannelOverrideTemplate) (*objects.GUID, error) {
-	return &objects.GUID{
-		Type: ent.TypeUser,
-		ID:   obj.UserID,
-	}, nil
-}
-
-// HeaderOverrideOperations is the resolver for the headerOverrideOperations field.
-// It returns the new header override operations, converting from legacy OverrideHeaders if needed.
-func (r *channelOverrideTemplateResolver) HeaderOverrideOperations(ctx context.Context, obj *ent.ChannelOverrideTemplate) ([]*objects.OverrideOperation, error) {
-	// If new field has data, use it directly
-	if len(obj.HeaderOverrideOperations) > 0 {
-		return lo.ToSlicePtr(obj.HeaderOverrideOperations), nil
-	}
-
-	// Convert from legacy OverrideHeaders field
-	if len(obj.OverrideHeaders) > 0 {
-		ops := objects.HeaderEntriesToOverrideOperations(obj.OverrideHeaders)
-		return lo.ToSlicePtr(ops), nil
-	}
-
-	return []*objects.OverrideOperation{}, nil
-}
-
-// BodyOverrideOperations is the resolver for the bodyOverrideOperations field.
-// It returns the new body override operations, converting from legacy OverrideParameters if needed.
-func (r *channelOverrideTemplateResolver) BodyOverrideOperations(ctx context.Context, obj *ent.ChannelOverrideTemplate) ([]*objects.OverrideOperation, error) {
-	// If new field has data, use it directly
-	if len(obj.BodyOverrideOperations) > 0 {
-		return lo.ToSlicePtr(obj.BodyOverrideOperations), nil
-	}
-
-	// Convert from legacy OverrideParameters field
-	if obj.OverrideParameters != "" && obj.OverrideParameters != "{}" {
-		ops, err := objects.ParseOverrideOperations(obj.OverrideParameters)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse override parameters: %w", err)
-		}
-
-		return lo.ToSlicePtr(ops), nil
-	}
-
-	return []*objects.OverrideOperation{}, nil
-}
-
-// User is the resolver for the user field.
-// Returns nil if the user has been soft-deleted.
-func (r *channelOverrideTemplateResolver) User(ctx context.Context, obj *ent.ChannelOverrideTemplate) (*ent.User, error) {
-	return getNilableUser(ctx, r.client, obj.UserID)
 }
 
 // ID is the resolver for the id field.
@@ -332,22 +271,6 @@ func (r *queryResolver) Channels(ctx context.Context, after *entgql.Cursor[int],
 	return r.client.Channel.Query().Paginate(ctx, after, first, before, last,
 		ent.WithChannelOrder(orderBy),
 		ent.WithChannelFilter(where.Filter),
-	)
-}
-
-// ChannelOverrideTemplates is the resolver for the channelOverrideTemplates field.
-func (r *queryResolver) ChannelOverrideTemplates(ctx context.Context, after *entgql.Cursor[int], first *int, before *entgql.Cursor[int], last *int, orderBy *ent.ChannelOverrideTemplateOrder, where *ent.ChannelOverrideTemplateWhereInput) (*ent.ChannelOverrideTemplateConnection, error) {
-	if err := validatePaginationArgs(first, last); err != nil {
-		return nil, err
-	}
-
-	if orderBy != nil && orderBy.Field.String() == "CREATED_AT" {
-		orderBy.Field = ent.DefaultChannelOverrideTemplateOrder.Field
-	}
-
-	return r.client.ChannelOverrideTemplate.Query().Paginate(ctx, after, first, before, last,
-		ent.WithChannelOverrideTemplateOrder(orderBy),
-		ent.WithChannelOverrideTemplateFilter(where.Filter),
 	)
 }
 
@@ -925,11 +848,6 @@ func (r *Resolver) ChannelModelPriceVersion() ChannelModelPriceVersionResolver {
 	return &channelModelPriceVersionResolver{r}
 }
 
-// ChannelOverrideTemplate returns ChannelOverrideTemplateResolver implementation.
-func (r *Resolver) ChannelOverrideTemplate() ChannelOverrideTemplateResolver {
-	return &channelOverrideTemplateResolver{r}
-}
-
 // ChannelProbe returns ChannelProbeResolver implementation.
 func (r *Resolver) ChannelProbe() ChannelProbeResolver { return &channelProbeResolver{r} }
 
@@ -996,7 +914,6 @@ type aPIKeyProfileTemplateResolver struct{ *Resolver }
 type channelResolver struct{ *Resolver }
 type channelModelPriceResolver struct{ *Resolver }
 type channelModelPriceVersionResolver struct{ *Resolver }
-type channelOverrideTemplateResolver struct{ *Resolver }
 type channelProbeResolver struct{ *Resolver }
 type dataStorageResolver struct{ *Resolver }
 type modelResolver struct{ *Resolver }

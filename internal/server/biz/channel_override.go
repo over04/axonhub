@@ -1,253 +1,389 @@
 package biz
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
+	"net/http"
+	"regexp"
 	"strings"
-
-	"github.com/samber/lo"
-
-	"github.com/looplj/axonhub/internal/log"
-	"github.com/looplj/axonhub/internal/objects"
 )
 
-// GetBodyOverrideOperations returns the cached override operations for the channel.
-// If the operations haven't been parsed yet, it parses and caches them.
-// Supports both legacy map format and new operation array format.
-//
-// WARNING: The returned slice is internal cached state.
-// DO NOT modify the returned slice or its contents.
-// Modifications will not persist and may cause data inconsistency.
-func (c *Channel) GetBodyOverrideOperations() []objects.OverrideOperation {
-	if c.cachedOverrideOps != nil {
-		return c.cachedOverrideOps
+var supportedParamOverrideOperationModes = map[string]struct{}{
+	"delete":        {},
+	"set":           {},
+	"move":          {},
+	"copy":          {},
+	"prepend":       {},
+	"append":        {},
+	"trim_prefix":   {},
+	"trim_suffix":   {},
+	"ensure_prefix": {},
+	"ensure_suffix": {},
+	"trim_space":    {},
+	"to_lower":      {},
+	"to_upper":      {},
+	"replace":       {},
+	"regex_replace": {},
+	"return_error":  {},
+	"prune_objects": {},
+	"set_header":    {},
+	"delete_header": {},
+	"copy_header":   {},
+	"move_header":   {},
+	"pass_headers":  {},
+	"sync_fields":   {},
+}
+
+// GetParamOverrideMap returns the parsed new-api compatible parameter override map.
+func (c *Channel) GetParamOverrideMap() map[string]any {
+	if c == nil || c.Settings == nil {
+		return nil
 	}
 
-	if c.Settings != nil {
-		// New schema field takes precedence. Even an explicit empty slice means "no overrides".
-		if c.Settings.BodyOverrideOperations != nil {
-			c.cachedOverrideOps = c.Settings.BodyOverrideOperations
-			return c.cachedOverrideOps
-		}
-	}
-
-	if c.Settings == nil || c.Settings.OverrideParameters == "" {
-		c.cachedOverrideOps = make([]objects.OverrideOperation, 0)
-		return c.cachedOverrideOps
-	}
-
-	ops, err := objects.ParseOverrideOperations(c.Settings.OverrideParameters)
+	result, err := parseOverrideJSONObject(c.Settings.ParamOverride)
 	if err != nil {
-		log.Warn(context.Background(), "failed to parse override operations",
-			log.String("channel", c.Name),
-			log.Cause(err),
-		)
-		c.cachedOverrideOps = make([]objects.OverrideOperation, 0)
-
-		return c.cachedOverrideOps
-	}
-
-	c.cachedOverrideOps = ops
-
-	return c.cachedOverrideOps
-}
-
-// GetHeaderOverrideOperations returns the cached override headers for the channel.
-// If the headers haven't been loaded yet, it loads and caches them.
-//
-// WARNING: The returned slice is internal cached state.
-// DO NOT modify the returned slice or its elements.
-// Modifications will not persist and may cause data inconsistency.
-func (c *Channel) GetHeaderOverrideOperations() []objects.OverrideOperation {
-	if c.cachedOverrideHeaders != nil {
-		return c.cachedOverrideHeaders
-	}
-
-	if c.Settings != nil {
-		// New schema field takes precedence. Even an explicit empty slice means "no overrides".
-		if c.Settings.HeaderOverrideOperations != nil {
-			c.cachedOverrideHeaders = c.Settings.HeaderOverrideOperations
-			return c.cachedOverrideHeaders
-		}
-	}
-
-	if c.Settings == nil || len(c.Settings.OverrideHeaders) == 0 {
-		c.cachedOverrideHeaders = make([]objects.OverrideOperation, 0)
-		return c.cachedOverrideHeaders
-	}
-
-	c.cachedOverrideHeaders = objects.HeaderEntriesToOverrideOperations(c.Settings.OverrideHeaders)
-
-	return c.cachedOverrideHeaders
-}
-
-const ClearHeaderDirective = "__AXONHUB_CLEAR__"
-
-// MergeOverrideHeaders merges existing header operations with a template.
-// - For set/delete ops, matching is by Path (case-insensitive). Template overrides existing.
-// - For rename/copy ops, they are always appended.
-// - Existing ops not mentioned in the template are preserved.
-func MergeOverrideHeaders(existing, template []objects.OverrideOperation) []objects.OverrideOperation {
-	result := make([]objects.OverrideOperation, 0, len(existing)+len(template))
-	result = append(result, existing...)
-
-	for _, op := range template {
-		if op.Op == objects.OverrideOpRename || op.Op == objects.OverrideOpCopy {
-			result = append(result, op)
-			continue
-		}
-
-		_, index, found := lo.FindIndexOf(result, func(item objects.OverrideOperation) bool {
-			return (item.Op == objects.OverrideOpSet || item.Op == objects.OverrideOpDelete) &&
-				strings.EqualFold(item.Path, op.Path)
-		})
-		if !found {
-			result = append(result, op)
-			continue
-		}
-
-		result[index] = op
+		return nil
 	}
 
 	return result
 }
 
-// MergeOverrideParameters deep-merges two JSON object strings.
-// - Both inputs must be JSON objects; otherwise, an error is returned.
-// - Nested objects are merged recursively; scalars/arrays are overwritten by the template.
-func MergeOverrideParameters(existing, template string) (string, error) {
-	existingObj, err := parseJSONObject(existing)
-	if err != nil {
-		return "", fmt.Errorf("invalid existing override parameters: %w", err)
-	}
-
-	templateObj, err := parseJSONObject(template)
-	if err != nil {
-		return "", fmt.Errorf("invalid template override parameters: %w", err)
-	}
-
-	merged := deepMergeMap(existingObj, templateObj)
-
-	bytes, err := json.Marshal(merged)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal merged override parameters: %w", err)
-	}
-
-	return string(bytes), nil
-}
-
-// NormalizeOverrideParameters converts empty or whitespace-only strings to "{}".
-// This ensures consistent representation across the system.
-func NormalizeOverrideParameters(params string) string {
-	if strings.TrimSpace(params) == "" {
-		return "{}"
-	}
-
-	return params
-}
-
-// ValidateOverrideParameters checks that params is valid JSON (object or array)
-// and that it does not contain the "stream" field (frontend parity).
-func ValidateOverrideParameters(params string) error {
-	trimmed := strings.TrimSpace(params)
-	if trimmed == "" {
-		return nil
-	}
-
-	ops, err := objects.ParseOverrideOperations(trimmed)
+func ValidateParamOverrideJSON(input string) error {
+	obj, err := parseOverrideJSONObject(input)
 	if err != nil {
 		return err
 	}
-
-	for _, op := range ops {
-		if op.Op == objects.OverrideOpSet && strings.EqualFold(op.Path, "stream") {
-			return fmt.Errorf("override parameters cannot contain the field \"stream\"")
+	if len(obj) == 0 {
+		return nil
+	}
+	operations, exists := obj["operations"]
+	if !exists {
+		return fmt.Errorf("param override operations are required")
+	}
+	items, ok := operations.([]any)
+	if !ok {
+		return fmt.Errorf("param override operations must be an array")
+	}
+	for index, item := range items {
+		op, ok := item.(map[string]any)
+		if !ok {
+			return fmt.Errorf("param override operation %d must be an object", index+1)
+		}
+		mode, ok := op["mode"].(string)
+		if !ok || strings.TrimSpace(mode) == "" {
+			return fmt.Errorf("param override operation %d mode is required", index+1)
+		}
+		mode = strings.TrimSpace(mode)
+		if _, ok := supportedParamOverrideOperationModes[mode]; !ok {
+			return fmt.Errorf("param override operation %d mode is unsupported: %s", index+1, mode)
+		}
+		if err := validateParamOverrideOperation(index+1, mode, op); err != nil {
+			return err
 		}
 	}
-
 	return nil
 }
 
-// ValidateBodyOverrideOperations validates body override operations.
-// - set/delete/array_*: require non-empty Path
-// - rename/copy: require non-empty From and To
-// - array_insert: requires Index
-// - set/array_*: cannot target the "stream" field.
-func ValidateBodyOverrideOperations(ops []objects.OverrideOperation) error {
-	for i, op := range ops {
-		switch op.Op {
-		case objects.OverrideOpSet:
-			if strings.TrimSpace(op.Path) == "" {
-				return fmt.Errorf("body operation at index %d (set) has an empty path", i)
-			}
-
-			if strings.EqualFold(op.Path, "stream") {
-				return fmt.Errorf("override parameters cannot contain the field \"stream\"")
-			}
-		case objects.OverrideOpDelete:
-			if strings.TrimSpace(op.Path) == "" {
-				return fmt.Errorf("body operation at index %d (delete) has an empty path", i)
-			}
-		case objects.OverrideOpRename, objects.OverrideOpCopy:
-			if strings.TrimSpace(op.From) == "" || strings.TrimSpace(op.To) == "" {
-				return fmt.Errorf("body operation at index %d (%s) requires non-empty from and to", i, op.Op)
-			}
-		case objects.OverrideOpArrayAppend, objects.OverrideOpArrayPrepend, objects.OverrideOpArrayInsert:
-			if strings.TrimSpace(op.Path) == "" {
-				return fmt.Errorf("body operation at index %d (%s) has an empty path", i, op.Op)
-			}
-
-			if strings.EqualFold(op.Path, "stream") {
-				return fmt.Errorf("override parameters cannot contain the field \"stream\"")
-			}
-
-			if op.Op == objects.OverrideOpArrayInsert && op.Index == nil {
-				return fmt.Errorf("body operation at index %d (array_insert) requires an index", i)
-			}
-		default:
-			return fmt.Errorf("body operation at index %d has unknown op %q", i, op.Op)
+func validateParamOverrideOperation(index int, mode string, op map[string]any) error {
+	if err := validateParamOverrideLogic(index, op); err != nil {
+		return err
+	}
+	if conditions, exists := op["conditions"]; exists {
+		if err := validateParamOverrideConditions(index, conditions); err != nil {
+			return err
 		}
 	}
 
-	return nil
-}
-
-// ValidateOverrideHeaders validates override header operations.
-// - set/delete: require non-empty Path
-// - rename/copy: require non-empty From and To.
-func ValidateOverrideHeaders(ops []objects.OverrideOperation) error {
-	for i, op := range ops {
-		switch op.Op {
-		case objects.OverrideOpSet:
-			if strings.TrimSpace(op.Path) == "" {
-				return fmt.Errorf("header operation at index %d (set) has an empty path", i)
-			}
-		case objects.OverrideOpDelete:
-			if strings.TrimSpace(op.Path) == "" {
-				return fmt.Errorf("header operation at index %d (delete) has an empty path", i)
-			}
-		case objects.OverrideOpRename, objects.OverrideOpCopy:
-			if strings.TrimSpace(op.From) == "" || strings.TrimSpace(op.To) == "" {
-				return fmt.Errorf("header operation at index %d (%s) requires non-empty from and to", i, op.Op)
-			}
-		case objects.OverrideOpArrayAppend, objects.OverrideOpArrayPrepend, objects.OverrideOpArrayInsert:
-			return fmt.Errorf("header operation at index %d (%s) is not supported on headers; array ops only apply to the body", i, op.Op)
-		default:
-			return fmt.Errorf("header operation at index %d has unknown op %q", i, op.Op)
+	switch mode {
+	case "delete", "trim_space", "to_lower", "to_upper":
+		return requireStringField(index, mode, op, "path")
+	case "set", "prepend", "append", "trim_prefix", "trim_suffix", "ensure_prefix", "ensure_suffix":
+		if err := requireStringField(index, mode, op, "path"); err != nil {
+			return err
 		}
+		return requireValueField(index, mode, op, "value")
+	case "replace":
+		if err := requireStringField(index, mode, op, "path"); err != nil {
+			return err
+		}
+		return requireStringField(index, mode, op, "from")
+	case "regex_replace":
+		if err := requireStringField(index, mode, op, "path"); err != nil {
+			return err
+		}
+		if err := requireStringField(index, mode, op, "from"); err != nil {
+			return err
+		}
+		pattern, _ := op["from"].(string)
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf("param override operation %d regex_replace from is invalid: %w", index, err)
+		}
+		return nil
+	case "move", "copy":
+		if err := requireStringField(index, mode, op, "from"); err != nil {
+			return err
+		}
+		return requireStringField(index, mode, op, "to")
+	case "return_error":
+		return validateParamOverrideReturnErrorValue(index, op["value"])
+	case "prune_objects":
+		return validateParamOverridePruneObjectsValue(index, op["value"])
+	case "set_header":
+		if err := requireStringField(index, mode, op, "path"); err != nil {
+			return err
+		}
+		return requireValueField(index, mode, op, "value")
+	case "delete_header":
+		return requireStringField(index, mode, op, "path")
+	case "copy_header", "move_header":
+		if strings.TrimSpace(stringField(op, "from")) == "" && strings.TrimSpace(stringField(op, "path")) == "" {
+			return fmt.Errorf("param override operation %d %s from/path is required", index, mode)
+		}
+		if strings.TrimSpace(stringField(op, "to")) == "" && strings.TrimSpace(stringField(op, "path")) == "" {
+			return fmt.Errorf("param override operation %d %s to/path is required", index, mode)
+		}
+		return nil
+	case "pass_headers":
+		return validateParamOverridePassHeadersValue(index, op["value"])
+	case "sync_fields":
+		if err := requireStringField(index, mode, op, "from"); err != nil {
+			return err
+		}
+		if err := requireStringField(index, mode, op, "to"); err != nil {
+			return err
+		}
+		if err := validateParamOverrideSyncTarget(index, mode, stringField(op, "from")); err != nil {
+			return err
+		}
+		return validateParamOverrideSyncTarget(index, mode, stringField(op, "to"))
+	default:
+		return nil
 	}
+}
 
+func requireStringField(index int, mode string, op map[string]any, field string) error {
+	value, ok := op[field].(string)
+	if !ok || strings.TrimSpace(value) == "" {
+		return fmt.Errorf("param override operation %d %s %s is required", index, mode, field)
+	}
 	return nil
 }
 
-func ValidateOverrideHeaderEntries(headers []objects.HeaderEntry) error {
-	ops := objects.HeaderEntriesToOverrideOperations(headers)
-	return ValidateOverrideHeaders(ops)
+func requireValueField(index int, mode string, op map[string]any, field string) error {
+	if value, exists := op[field]; !exists || value == nil {
+		return fmt.Errorf("param override operation %d %s %s is required", index, mode, field)
+	}
+	return nil
 }
 
-func parseJSONObject(input string) (map[string]any, error) {
+func stringField(op map[string]any, field string) string {
+	value, _ := op[field].(string)
+	return value
+}
+
+func validateParamOverrideLogic(index int, op map[string]any) error {
+	logic, ok := op["logic"].(string)
+	if !ok || strings.TrimSpace(logic) == "" {
+		return nil
+	}
+	switch strings.ToUpper(strings.TrimSpace(logic)) {
+	case "AND", "OR":
+		return nil
+	default:
+		return fmt.Errorf("param override operation %d logic is unsupported: %s", index, logic)
+	}
+}
+
+func validateParamOverrideConditions(index int, raw any) error {
+	switch typed := raw.(type) {
+	case map[string]any:
+		for key := range typed {
+			if strings.TrimSpace(key) != "" {
+				return nil
+			}
+		}
+		return fmt.Errorf("param override operation %d conditions object must contain at least one key", index)
+	case []any:
+		for conditionIndex, item := range typed {
+			itemMap, ok := item.(map[string]any)
+			if !ok {
+				return fmt.Errorf("param override operation %d condition %d must be an object", index, conditionIndex+1)
+			}
+			path, _ := itemMap["path"].(string)
+			mode, _ := itemMap["mode"].(string)
+			if strings.TrimSpace(path) == "" || strings.TrimSpace(mode) == "" {
+				return fmt.Errorf("param override operation %d condition %d path/mode is required", index, conditionIndex+1)
+			}
+			if err := validateParamOverrideConditionMode(index, conditionIndex+1, mode); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("param override operation %d conditions must be an array or object", index)
+	}
+}
+
+func validateParamOverrideConditionMode(index, conditionIndex int, mode string) error {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "full", "prefix", "suffix", "contains", "gt", "gte", "lt", "lte":
+		return nil
+	default:
+		return fmt.Errorf("param override operation %d condition %d mode is unsupported: %s", index, conditionIndex, mode)
+	}
+}
+
+func validateParamOverrideReturnErrorValue(index int, value any) error {
+	switch raw := value.(type) {
+	case nil:
+		return fmt.Errorf("param override operation %d return_error value is required", index)
+	case string:
+		if strings.TrimSpace(raw) == "" {
+			return fmt.Errorf("param override operation %d return_error message is required", index)
+		}
+		return nil
+	case map[string]any:
+		message, _ := raw["message"].(string)
+		if strings.TrimSpace(message) == "" {
+			message, _ = raw["msg"].(string)
+		}
+		if strings.TrimSpace(message) == "" {
+			return fmt.Errorf("param override operation %d return_error message is required", index)
+		}
+		if skipRetry, exists := raw["skip_retry"]; exists {
+			if _, ok := skipRetry.(bool); !ok {
+				return fmt.Errorf("param override operation %d return_error skip_retry must be a boolean", index)
+			}
+		}
+		for _, key := range []string{"status_code", "status"} {
+			if statusRaw, exists := raw[key]; exists {
+				statusCode, ok := parseOverrideJSONInt(statusRaw)
+				if !ok {
+					return fmt.Errorf("param override operation %d return_error %s must be an integer", index, key)
+				}
+				if statusCode < http.StatusContinue || statusCode > http.StatusNetworkAuthenticationRequired {
+					return fmt.Errorf("param override operation %d return_error status code out of range: %d", index, statusCode)
+				}
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("param override operation %d return_error value must be string or object", index)
+	}
+}
+
+func parseOverrideJSONInt(value any) (int, bool) {
+	switch typed := value.(type) {
+	case float64:
+		if typed != float64(int(typed)) {
+			return 0, false
+		}
+		return int(typed), true
+	case json.Number:
+		n, err := typed.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return int(n), true
+	default:
+		return 0, false
+	}
+}
+
+func validateParamOverridePruneObjectsValue(index int, value any) error {
+	switch raw := value.(type) {
+	case nil:
+		return fmt.Errorf("param override operation %d prune_objects value is required", index)
+	case string:
+		if strings.TrimSpace(raw) == "" {
+			return fmt.Errorf("param override operation %d prune_objects value is required", index)
+		}
+		return nil
+	case map[string]any:
+		conditionCount := 0
+		if conditions, exists := raw["conditions"]; exists {
+			if err := validateParamOverrideConditions(index, conditions); err != nil {
+				return err
+			}
+			conditionCount++
+		}
+		if whereRaw, exists := raw["where"]; exists {
+			where, ok := whereRaw.(map[string]any)
+			if !ok {
+				return fmt.Errorf("param override operation %d prune_objects where must be object", index)
+			}
+			for key := range where {
+				if strings.TrimSpace(key) != "" {
+					conditionCount++
+					break
+				}
+			}
+		}
+		if _, exists := raw["type"]; exists {
+			conditionCount++
+		}
+		if conditionCount == 0 {
+			return fmt.Errorf("param override operation %d prune_objects conditions are required", index)
+		}
+		return nil
+	default:
+		return fmt.Errorf("param override operation %d prune_objects value must be string or object", index)
+	}
+}
+
+func validateParamOverridePassHeadersValue(index int, value any) error {
+	switch raw := value.(type) {
+	case nil:
+		return fmt.Errorf("param override operation %d pass_headers value is required", index)
+	case string:
+		if strings.TrimSpace(raw) == "" {
+			return fmt.Errorf("param override operation %d pass_headers value is required", index)
+		}
+		return nil
+	case []any:
+		for _, item := range raw {
+			if strings.TrimSpace(fmt.Sprintf("%v", item)) != "" {
+				return nil
+			}
+		}
+		return fmt.Errorf("param override operation %d pass_headers value is required", index)
+	case map[string]any:
+		for _, key := range []string{"headers", "names", "header"} {
+			if namesRaw, ok := raw[key]; ok {
+				if err := validateParamOverridePassHeadersValue(index, namesRaw); err == nil {
+					return nil
+				}
+			}
+		}
+		return fmt.Errorf("param override operation %d pass_headers value is invalid", index)
+	default:
+		return fmt.Errorf("param override operation %d pass_headers value must be string, array or object", index)
+	}
+}
+
+func validateParamOverrideSyncTarget(index int, mode, spec string) error {
+	raw := strings.TrimSpace(spec)
+	if raw == "" {
+		return fmt.Errorf("param override operation %d %s target is required", index, mode)
+	}
+	colon := strings.Index(raw, ":")
+	if colon < 0 {
+		return nil
+	}
+	kind := strings.ToLower(strings.TrimSpace(raw[:colon]))
+	key := strings.TrimSpace(raw[colon+1:])
+	if key == "" {
+		return fmt.Errorf("param override operation %d %s target key is required", index, mode)
+	}
+	switch kind {
+	case "json", "body", "header":
+		return nil
+	default:
+		return fmt.Errorf("param override operation %d %s target prefix is invalid: %s", index, mode, raw)
+	}
+}
+
+func parseOverrideJSONObject(input string) (map[string]any, error) {
 	if strings.TrimSpace(input) == "" {
 		return map[string]any{}, nil
 	}
@@ -259,30 +395,8 @@ func parseJSONObject(input string) (map[string]any, error) {
 
 	obj, ok := parsed.(map[string]any)
 	if !ok || obj == nil {
-		return nil, fmt.Errorf("override parameters must be a JSON object")
+		return nil, fmt.Errorf("override must be a JSON object")
 	}
 
 	return obj, nil
-}
-
-func deepMergeMap(base, override map[string]any) map[string]any {
-	result := make(map[string]any, len(base)+len(override))
-
-	maps.Copy(result, base)
-
-	for k, overrideVal := range override {
-		if baseVal, exists := result[k]; exists {
-			baseMap, baseIsMap := baseVal.(map[string]any)
-			overrideMap, overrideIsMap := overrideVal.(map[string]any)
-
-			if baseIsMap && overrideIsMap {
-				result[k] = deepMergeMap(baseMap, overrideMap)
-				continue
-			}
-		}
-
-		result[k] = overrideVal
-	}
-
-	return result
 }

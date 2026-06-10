@@ -12,7 +12,6 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/looplj/axonhub/internal/ent/apikey"
-	"github.com/looplj/axonhub/internal/ent/channeloverridetemplate"
 	"github.com/looplj/axonhub/internal/ent/oidcidentity"
 	"github.com/looplj/axonhub/internal/ent/project"
 	"github.com/looplj/axonhub/internal/ent/role"
@@ -216,21 +215,6 @@ func (_c *UserCreate) AddRoles(v ...*Role) *UserCreate {
 		ids[i] = v[i].ID
 	}
 	return _c.AddRoleIDs(ids...)
-}
-
-// AddChannelOverrideTemplateIDs adds the "channel_override_templates" edge to the ChannelOverrideTemplate entity by IDs.
-func (_c *UserCreate) AddChannelOverrideTemplateIDs(ids ...int) *UserCreate {
-	_c.mutation.AddChannelOverrideTemplateIDs(ids...)
-	return _c
-}
-
-// AddChannelOverrideTemplates adds the "channel_override_templates" edges to the ChannelOverrideTemplate entity.
-func (_c *UserCreate) AddChannelOverrideTemplates(v ...*ChannelOverrideTemplate) *UserCreate {
-	ids := make([]int, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _c.AddChannelOverrideTemplateIDs(ids...)
 }
 
 // AddOidcIdentityIDs adds the "oidc_identities" edge to the OIDCIdentity entity by IDs.
@@ -520,22 +504,6 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 		createE.defaults()
 		_, specE := createE.createSpec()
 		edge.Target.Fields = specE.Fields
-		_spec.Edges = append(_spec.Edges, edge)
-	}
-	if nodes := _c.mutation.ChannelOverrideTemplatesIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.ChannelOverrideTemplatesTable,
-			Columns: []string{user.ChannelOverrideTemplatesColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(channeloverridetemplate.FieldID, field.TypeInt),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := _c.mutation.OidcIdentitiesIDs(); len(nodes) > 0 {

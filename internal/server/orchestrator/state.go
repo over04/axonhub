@@ -65,6 +65,15 @@ type PersistenceState struct {
 	// RawProviderRequest stores the actual outbound provider request for pass-through checks.
 	RawProviderRequest *httpclient.Request
 
+	// RetryIndex is exposed to parameter override conditions.
+	RetryIndex int
+
+	// LastError stores the previous HTTP-shaped error for parameter override conditions.
+	LastError *httpclient.Error
+
+	// SkipRetryForLastError prevents same-channel retry and channel switching for the current error.
+	SkipRetryForLastError bool
+
 	// RawStreamCh receives raw provider stream events for stream response pass-through.
 	RawStreamCh chan *httpclient.StreamEvent
 

@@ -19,7 +19,6 @@ import (
 	"github.com/looplj/axonhub/internal/ent/channel"
 	"github.com/looplj/axonhub/internal/ent/channelmodelprice"
 	"github.com/looplj/axonhub/internal/ent/channelmodelpriceversion"
-	"github.com/looplj/axonhub/internal/ent/channeloverridetemplate"
 	"github.com/looplj/axonhub/internal/ent/channelprobe"
 	"github.com/looplj/axonhub/internal/ent/datastorage"
 	"github.com/looplj/axonhub/internal/ent/model"
@@ -71,11 +70,6 @@ var channelmodelpriceversionImplementors = []string{"ChannelModelPriceVersion", 
 
 // IsNode implements the Node interface check for GQLGen.
 func (*ChannelModelPriceVersion) IsNode() {}
-
-var channeloverridetemplateImplementors = []string{"ChannelOverrideTemplate", "Node"}
-
-// IsNode implements the Node interface check for GQLGen.
-func (*ChannelOverrideTemplate) IsNode() {}
 
 var channelprobeImplementors = []string{"ChannelProbe", "Node"}
 
@@ -266,15 +260,6 @@ func (c *Client) noder(ctx context.Context, table string, id int) (Noder, error)
 			Where(channelmodelpriceversion.ID(id))
 		if fc := graphql.GetFieldContext(ctx); fc != nil {
 			if err := query.collectField(ctx, true, graphql.GetOperationContext(ctx), fc.Field, nil, channelmodelpriceversionImplementors...); err != nil {
-				return nil, err
-			}
-		}
-		return query.Only(ctx)
-	case channeloverridetemplate.Table:
-		query := c.ChannelOverrideTemplate.Query().
-			Where(channeloverridetemplate.ID(id))
-		if fc := graphql.GetFieldContext(ctx); fc != nil {
-			if err := query.collectField(ctx, true, graphql.GetOperationContext(ctx), fc.Field, nil, channeloverridetemplateImplementors...); err != nil {
 				return nil, err
 			}
 		}
@@ -582,22 +567,6 @@ func (c *Client) noders(ctx context.Context, table string, ids []int) ([]Noder, 
 		query := c.ChannelModelPriceVersion.Query().
 			Where(channelmodelpriceversion.IDIn(ids...))
 		query, err := query.CollectFields(ctx, channelmodelpriceversionImplementors...)
-		if err != nil {
-			return nil, err
-		}
-		nodes, err := query.All(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, node := range nodes {
-			for _, noder := range idmap[node.ID] {
-				*noder = node
-			}
-		}
-	case channeloverridetemplate.Table:
-		query := c.ChannelOverrideTemplate.Query().
-			Where(channeloverridetemplate.IDIn(ids...))
-		query, err := query.CollectFields(ctx, channeloverridetemplateImplementors...)
 		if err != nil {
 			return nil, err
 		}

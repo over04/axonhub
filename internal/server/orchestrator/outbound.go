@@ -504,6 +504,9 @@ func (p *PersistentOutboundTransformer) GetRequestedModel() string {
 // HasMoreChannels returns true if there are more candidates available for retry.
 // It implements the pipeline.Retryable interface.
 func (p *PersistentOutboundTransformer) HasMoreChannels() bool {
+	if p.state == nil || p.state.SkipRetryForLastError {
+		return false
+	}
 	return p.state.CurrentCandidateIndex+1 < len(p.state.ChannelModelsCandidates)
 }
 
@@ -529,6 +532,7 @@ func (p *PersistentOutboundTransformer) NextChannel(ctx context.Context) error {
 	p.resetPassThroughStreamState()
 
 	p.state.CurrentCandidateIndex++
+	p.state.RetryIndex++
 
 	p.state.CurrentModelIndex = 0
 	if p.state.CurrentCandidateIndex >= len(p.state.ChannelModelsCandidates) {
@@ -560,6 +564,17 @@ func (p *PersistentOutboundTransformer) NextChannel(ctx context.Context) error {
 // pipeline will ensure the maxSameChannelRetries is not exceeded.
 func (p *PersistentOutboundTransformer) CanRetry(err error) bool {
 	if p.state.CurrentCandidate == nil {
+		return false
+	}
+
+	p.state.SkipRetryForLastError = isParamOverrideSkipRetryError(err)
+
+	var httpErr *httpclient.Error
+	if errors.As(err, &httpErr) {
+		p.state.LastError = httpErr
+	}
+
+	if p.state.SkipRetryForLastError {
 		return false
 	}
 
@@ -622,6 +637,7 @@ func (p *PersistentOutboundTransformer) PrepareForRetry(ctx context.Context) err
 
 	// Reset request execution for the same channel.
 	p.state.RequestExec = nil
+	p.state.RetryIndex++
 
 	// Cancel any in-flight pass-through stream goroutine from the previous attempt
 	// so it exits promptly and releases its upstream HTTP connection.

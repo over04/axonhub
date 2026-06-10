@@ -150,6 +150,16 @@ func (m *mockExecutor) DoStream(ctx context.Context, req *httpclient.Request) (s
 	return nil, nil
 }
 
+type mockSkipRetryError struct{}
+
+func (mockSkipRetryError) Error() string {
+	return "skip retry"
+}
+
+func (mockSkipRetryError) SkipRetry() bool {
+	return true
+}
+
 type mockMiddleware struct {
 	Middleware
 
@@ -178,6 +188,54 @@ func (m *mockMiddleware) OnOutboundRawError(ctx context.Context, err error) {
 
 func (m *mockMiddleware) OnOutboundRawResponse(ctx context.Context, response *httpclient.Response) (*httpclient.Response, error) {
 	return response, nil
+}
+
+func TestProcess_SkipRetryErrorStopsAllRetryStrategies(t *testing.T) {
+	var canRetryCalls int
+	var hasMoreChannelsCalls int
+	var nextChannelCalls int
+	var prepareForRetryCalls int
+	var executorCalls int
+
+	outbound := &mockOutbound{
+		canRetry: func(error) bool {
+			canRetryCalls++
+			return true
+		},
+		prepareForRetry: func(context.Context) error {
+			prepareForRetryCalls++
+			return nil
+		},
+		hasMoreChannels: func() bool {
+			hasMoreChannelsCalls++
+			return true
+		},
+		nextChannel: func(context.Context) error {
+			nextChannelCalls++
+			return nil
+		},
+	}
+	p := &pipeline{
+		Executor: &mockExecutor{do: func(context.Context, *httpclient.Request) (*httpclient.Response, error) {
+			executorCalls++
+			return nil, mockSkipRetryError{}
+		}},
+		Inbound:                &mockInbound{},
+		Outbound:               outbound,
+		maxChannelRetries:      2,
+		maxSameChannelRetries:  2,
+		emptyResponseDetection: false,
+	}
+
+	result, err := p.Process(context.Background(), &httpclient.Request{})
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.True(t, shouldSkipRetry(err))
+	require.Equal(t, 1, executorCalls)
+	require.Zero(t, canRetryCalls)
+	require.Zero(t, prepareForRetryCalls)
+	require.Zero(t, hasMoreChannelsCalls)
+	require.Zero(t, nextChannelCalls)
 }
 
 func (m *mockMiddleware) OnOutboundLlmResponse(ctx context.Context, response *llm.Response) (*llm.Response, error) {
