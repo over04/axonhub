@@ -236,6 +236,7 @@ func convertAssistantMessage(msg llm.Message) []Item {
 				Type:      "function_call",
 				CallID:    tc.ID,
 				Name:      tc.Function.Name,
+				Namespace: tc.Function.Namespace,
 				Arguments: tc.Function.Arguments,
 			})
 		}
@@ -329,6 +330,7 @@ func convertImageGenerationToTool(src llm.Tool) Tool {
 		tool.Model = src.ImageGeneration.Model
 		tool.Background = src.ImageGeneration.Background
 		tool.InputFidelity = src.ImageGeneration.InputFidelity
+		tool.InputImageMask = src.ImageGeneration.InputImageMask
 		tool.Moderation = src.ImageGeneration.Moderation
 		tool.OutputCompression = src.ImageGeneration.OutputCompression
 		tool.OutputFormat = src.ImageGeneration.OutputFormat
@@ -648,6 +650,7 @@ func convertOutputToMessage(output []Item, transformerMetadata map[string]any) l
 				Type: "function",
 				Function: llm.FunctionCall{
 					Name:      outputItem.Name,
+					Namespace: outputItem.Namespace,
 					Arguments: outputItem.Arguments,
 				},
 			})

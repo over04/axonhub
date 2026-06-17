@@ -74,6 +74,16 @@ input ProxyConfigInput {
   password: String
 }
 
+type RetryableErrorPattern {
+  pattern: String!
+  regex: Boolean!
+}
+
+input RetryableErrorPatternInput {
+  pattern: String!
+  regex: Boolean
+}
+
 type ChannelSettings {
   extraModelPrefix: String
   modelMappings: [ModelMapping!]
@@ -87,6 +97,8 @@ type ChannelSettings {
   passThroughUserAgent: Boolean
   passThroughBody: Boolean
   rateLimit: ChannelRateLimit
+  retryableStatusCodes: [Int!]
+  retryableErrorPatterns: [RetryableErrorPattern!]
 }
 
 enum CapabilityPolicy {
@@ -121,6 +133,8 @@ input ChannelSettingsInput {
   passThroughUserAgent: Boolean
   passThroughBody: Boolean
   rateLimit: ChannelRateLimitInput
+  retryableStatusCodes: [Int!]
+  retryableErrorPatterns: [RetryableErrorPatternInput!]
 }
 
 input ChannelRateLimitInput {
@@ -704,6 +718,7 @@ type DeleteDisabledAPIKeysPayload {
 
 type Mutation {
   createChannel(input: CreateChannelInput!): Channel!
+  duplicateChannel(sourceID: ID!, input: CreateChannelInput!): Channel!
   bulkCreateChannels(input: BulkCreateChannelsInput!): [Channel!]!
   updateChannel(id: ID!, input: UpdateChannelInput!): Channel!
   saveChannelEndpoints(input: SaveChannelEndpointsInput!): Channel!

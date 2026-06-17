@@ -439,7 +439,7 @@ func (s *responsesInboundStream) handleTextContent(content *string) error {
 			ContentIndex: &s.contentIndex,
 			Part: &StreamEventContentPart{
 				Type:        "output_text",
-				Text:        lo.ToPtr(""),
+				Text:        "",
 				Annotations: textPartItems[0].Annotations,
 			},
 		})
@@ -534,6 +534,7 @@ func (s *responsesInboundStream) initToolCall(tc llm.ToolCall) error {
 		ResponseCustomToolCall: tc.ResponseCustomToolCall,
 		Function: llm.FunctionCall{
 			Name:      tc.Function.Name,
+			Namespace: tc.Function.Namespace,
 			Arguments: "",
 		},
 	}
@@ -565,11 +566,12 @@ func (s *responsesInboundStream) initToolCall(tc llm.ToolCall) error {
 
 	default:
 		item := &Item{
-			ID:     itemID,
-			Type:   "function_call",
-			Status: lo.ToPtr("in_progress"),
-			CallID: tc.ID,
-			Name:   tc.Function.Name,
+			ID:        itemID,
+			Type:      "function_call",
+			Status:    lo.ToPtr("in_progress"),
+			CallID:    tc.ID,
+			Name:      tc.Function.Name,
+			Namespace: tc.Function.Namespace,
 		}
 
 		err := s.enqueueEvent(&StreamEvent{
@@ -670,7 +672,7 @@ func (s *responsesInboundStream) closeReasoningItem() error {
 			SummaryIndex: lo.ToPtr(0),
 			Part: &StreamEventContentPart{
 				Type: "summary_text",
-				Text: &fullReasoning,
+				Text: fullReasoning,
 			},
 		})
 		if err != nil {
@@ -801,7 +803,7 @@ func (s *responsesInboundStream) closeCurrentContentPart() error {
 		ContentIndex: &s.contentIndex,
 		Part: &StreamEventContentPart{
 			Type:        "output_text",
-			Text:        lo.ToPtr(fullText),
+			Text:        fullText,
 			Annotations: contentPartItems[0].Annotations,
 		},
 	})
@@ -889,6 +891,7 @@ func (s *responsesInboundStream) closeCurrentOutputItem() error {
 				Status:    lo.ToPtr("completed"),
 				CallID:    tc.ID,
 				Name:      tc.Function.Name,
+				Namespace: tc.Function.Namespace,
 				Arguments: tc.Function.Arguments,
 			}
 

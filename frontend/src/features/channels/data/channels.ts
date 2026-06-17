@@ -69,7 +69,6 @@ const CREATE_CHANNEL_MUTATION = `
       type
       createdAt
       updatedAt
-      type
       baseURL
       name
       status
@@ -82,31 +81,103 @@ const CREATE_CHANNEL_MUTATION = `
       manualModels
       tags
       defaultTestModel
-        settings {
-          extraModelPrefix
-          modelMappings {
-            from
-            to
-          }
-          autoTrimedModelPrefixes
-          hideOriginalModels
-          hideMappedModels
-          lowercaseModelId
-          paramOverride
-          proxy {
-            type
-            url
-            username
-            password
-          }
-          transformOptions {
-            forceArrayInstructions
-            forceArrayInputs
-            replaceDeveloperRoleWithSystem
-          }
-          passThroughUserAgent
-          passThroughBody
+      settings {
+        extraModelPrefix
+        modelMappings {
+          from
+          to
         }
+        autoTrimedModelPrefixes
+        hideOriginalModels
+        hideMappedModels
+        lowercaseModelId
+        paramOverride
+        proxy {
+          type
+          url
+          username
+          password
+        }
+        transformOptions {
+          forceArrayInstructions
+          forceArrayInputs
+          replaceDeveloperRoleWithSystem
+        }
+        passThroughUserAgent
+        passThroughBody
+        retryableStatusCodes
+        retryableErrorPatterns {
+          pattern
+          regex
+        }
+      }
+      orderingWeight
+      remark
+      defaultEndpoints {
+        apiFormat
+        path
+        baseURL
+        transport
+      }
+      endpoints {
+        apiFormat
+        path
+        baseURL
+        transport
+      }
+    }
+  }
+`;
+
+const DUPLICATE_CHANNEL_MUTATION = `
+  mutation DuplicateChannel($sourceID: ID!, $input: CreateChannelInput!) {
+    duplicateChannel(sourceID: $sourceID, input: $input) {
+      id
+      type
+      createdAt
+      updatedAt
+      baseURL
+      name
+      status
+      policies {
+        stream
+      }
+      supportedModels
+      autoSyncSupportedModels
+      autoSyncModelPattern
+      manualModels
+      tags
+      defaultTestModel
+      settings {
+        extraModelPrefix
+        modelMappings {
+          from
+          to
+        }
+        autoTrimedModelPrefixes
+        hideOriginalModels
+        hideMappedModels
+        lowercaseModelId
+        paramOverride
+        proxy {
+          type
+          url
+          username
+          password
+        }
+        transformOptions {
+          forceArrayInstructions
+          forceArrayInputs
+          replaceDeveloperRoleWithSystem
+        }
+        passThroughUserAgent
+        passThroughBody
+        retryableStatusCodes
+        retryableErrorPatterns {
+          pattern
+          regex
+        }
+      }
       orderingWeight
       remark
       defaultEndpoints {
@@ -144,31 +215,36 @@ const BULK_CREATE_CHANNELS_MUTATION = `
       manualModels
       tags
       defaultTestModel
-        settings {
-          extraModelPrefix
-          modelMappings {
-            from
-            to
-          }
-          autoTrimedModelPrefixes
-          hideOriginalModels
-          hideMappedModels
-          lowercaseModelId
-          paramOverride
-          proxy {
-            type
-            url
-            username
-            password
-          }
-          transformOptions {
-            forceArrayInstructions
-            forceArrayInputs
-            replaceDeveloperRoleWithSystem
-          }
-          passThroughUserAgent
-          passThroughBody
+      settings {
+        extraModelPrefix
+        modelMappings {
+          from
+          to
         }
+        autoTrimedModelPrefixes
+        hideOriginalModels
+        hideMappedModels
+        lowercaseModelId
+        paramOverride
+        proxy {
+          type
+          url
+          username
+          password
+        }
+        transformOptions {
+          forceArrayInstructions
+          forceArrayInputs
+          replaceDeveloperRoleWithSystem
+        }
+        passThroughUserAgent
+        passThroughBody
+        retryableStatusCodes
+        retryableErrorPatterns {
+          pattern
+          regex
+        }
+      }
       orderingWeight
       remark
       defaultEndpoints {
@@ -206,31 +282,36 @@ const UPDATE_CHANNEL_MUTATION = `
       manualModels
       tags
       defaultTestModel
-        settings {
-          extraModelPrefix
-          modelMappings {
-            from
-            to
-          }
-          autoTrimedModelPrefixes
-          hideOriginalModels
-          hideMappedModels
-          lowercaseModelId
-          paramOverride
-          proxy {
-            type
-            url
-            username
-            password
-          }
-          transformOptions {
-            forceArrayInstructions
-            forceArrayInputs
-            replaceDeveloperRoleWithSystem
-          }
-          passThroughUserAgent
-          passThroughBody
+      settings {
+        extraModelPrefix
+        modelMappings {
+          from
+          to
         }
+        autoTrimedModelPrefixes
+        hideOriginalModels
+        hideMappedModels
+        lowercaseModelId
+        paramOverride
+        proxy {
+          type
+          url
+          username
+          password
+        }
+        transformOptions {
+          forceArrayInstructions
+          forceArrayInputs
+          replaceDeveloperRoleWithSystem
+        }
+        passThroughUserAgent
+        passThroughBody
+        retryableStatusCodes
+        retryableErrorPatterns {
+          pattern
+          regex
+        }
+      }
       orderingWeight
       errorMessage
       remark
@@ -397,6 +478,11 @@ const BULK_IMPORT_CHANNELS_MUTATION = `
           }
           passThroughUserAgent
           passThroughBody
+          retryableStatusCodes
+          retryableErrorPatterns {
+            pattern
+            regex
+          }
         }
       }
     }
@@ -584,6 +670,11 @@ const BULK_UPDATE_CHANNEL_ORDERING_MUTATION = `
           }
           passThroughUserAgent
           passThroughBody
+          retryableStatusCodes
+          retryableErrorPatterns {
+            pattern
+            regex
+          }
         }
       }
     }
@@ -701,6 +792,11 @@ const QUERY_CHANNELS_QUERY = `
               maxConcurrent
               queueSize
               queueTimeoutMs
+            }
+            retryableStatusCodes
+            retryableErrorPatterns {
+              pattern
+              regex
             }
           }
           orderingWeight
@@ -905,6 +1001,26 @@ export function useCreateChannel() {
     },
     onError: (error) => {
       handleError(error, { context: t('channels.dialogs.create.title') });
+    },
+  });
+}
+
+export function useDuplicateChannel() {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const { handleError } = useErrorHandler();
+
+  return useMutation({
+    mutationFn: async ({ sourceID, input }: { sourceID: string; input: CreateChannelInput }) => {
+      const data = await graphqlRequest<{ duplicateChannel: Channel }>(DUPLICATE_CHANNEL_MUTATION, { sourceID, input });
+      return channelSchema.parse(data.duplicateChannel);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['channels'] });
+      toast.success(t('common.success.duplicated'));
+    },
+    onError: (error) => {
+      handleError(error, { context: t('common.actions.duplicate') });
     },
   });
 }

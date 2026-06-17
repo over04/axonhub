@@ -386,6 +386,14 @@ func (svc *ChannelService) buildNonDefaultEndpointOutbound(
 		llm.APIFormatOpenAISpeech.String(),
 		llm.APIFormatOpenAITranscription.String(),
 		llm.APIFormatOpenAITranslation.String():
+		if c.Type == channel.TypeCodex &&
+			(ep.APIFormat == llm.APIFormatOpenAIImageGeneration.String() ||
+				ep.APIFormat == llm.APIFormatOpenAIImageEdit.String()) {
+			transport := endpointTransport(ep)
+
+			return svc.buildCodexOutbound(c, ch, baseURL, transport, ch.HTTPClient)
+		}
+
 		return openai.NewOutboundTransformerWithConfig(&openai.Config{
 			PlatformType:   openai.PlatformOpenAI,
 			BaseURL:        baseURL,
@@ -595,7 +603,7 @@ func (svc *ChannelService) buildChannelWithTransformer(c *ent.Channel) (*Channel
 		ch.Outbound = transformer
 
 		return ch, nil
-	case channel.TypeAnthropic, channel.TypeMinimaxAnthropic, channel.TypeVolcengineAnthropic, channel.TypeAihubmixAnthropic, channel.TypeXiaomiAnthropic:
+	case channel.TypeAnthropic, channel.TypeMinimaxAnthropic, channel.TypeVolcengineAnthropic, channel.TypeAihubmixAnthropic, channel.TypeXiaomiAnthropic, channel.TypeEvolinkAnthropic:
 		transformer, err := anthropic.NewOutboundTransformerWithConfig(&anthropic.Config{
 			Type:           anthropic.PlatformDirect,
 			BaseURL:        c.BaseURL,
@@ -926,7 +934,7 @@ func (svc *ChannelService) buildChannelWithTransformer(c *ent.Channel) (*Channel
 	case channel.TypeOpenai, channel.TypeAtlascloud, channel.TypeDeepinfra, channel.TypeQiniu, channel.TypeMinimax,
 		channel.TypePpio, channel.TypeSiliconflow,
 		channel.TypeVercel, channel.TypeAihubmix, channel.TypeBurncloud, channel.TypeGithub,
-		channel.TypeOpencodeGo:
+		channel.TypeOpencodeGo, channel.TypeEvolink:
 		transformer, err := openai.NewOutboundTransformerWithConfig(&openai.Config{
 			PlatformType:   openai.PlatformOpenAI,
 			BaseURL:        c.BaseURL,
