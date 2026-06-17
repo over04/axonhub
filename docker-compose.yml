@@ -35,7 +35,9 @@ services:
 
   # AxonHub 主服务
   axonhub:
-    image: looplj/axonhub:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: axonhub-app
     environment:
       # 数据库配置可以通过环境变量设置，优先级高于配置文件
@@ -75,7 +77,9 @@ services:
   # mkdir data
   # chmod 777 data
   # axonhub-sqlite:
-  #   image: looplj/axonhub:latest
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
   #   container_name: axonhub-sqlite-app
   #   environment:
   #     AXONHUB_DB_DIALECT: sqlite3
@@ -129,7 +133,9 @@ services:
   # # AxonHub 主服务 (MySQL 版本)
   # # 注意: 取消注释此服务时，请注释掉上面的 PostgreSQL 版本 axonhub 服务
   # axonhub-mysql:
-  #   image: looplj/axonhub:latest
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
   #   container_name: axonhub-mysql-app
   #   environment:
   #     AXONHUB_DB_DIALECT: mysql
