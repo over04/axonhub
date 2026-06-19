@@ -915,6 +915,7 @@ type ComplexityRoot struct {
 		UpdatePromptProtectionRule           func(childComplexity int, id objects.GUID, input ent.UpdatePromptProtectionRuleInput) int
 		UpdatePromptProtectionRuleStatus     func(childComplexity int, id objects.GUID, status promptprotectionrule.Status) int
 		UpdatePromptStatus                   func(childComplexity int, id objects.GUID, status prompt.Status) int
+		UpdatePublicModeSettings             func(childComplexity int, input UpdatePublicModeSettingsInput) int
 		UpdateQuotaEnforcementSettings       func(childComplexity int, input UpdateQuotaEnforcementSettingsInput) int
 		UpdateRetryPolicy                    func(childComplexity int, input biz.RetryPolicy) int
 		UpdateRole                           func(childComplexity int, id objects.GUID, input ent.UpdateRoleInput) int
@@ -1156,6 +1157,12 @@ type ComplexityRoot struct {
 		Username func(childComplexity int) int
 	}
 
+	PublicModeSettings struct {
+		PublicMode                 func(childComplexity int) int
+		RegistrationInviteCode     func(childComplexity int) int
+		RegistrationInviteRequired func(childComplexity int) int
+	}
+
 	Query struct {
 		APIKeyProfileTemplates       func(childComplexity int, after *entgql.Cursor[int], first *int, before *entgql.Cursor[int], last *int, orderBy *ent.APIKeyProfileTemplateOrder, where *ent.APIKeyProfileTemplateWhereInput) int
 		APIKeyQuotaUsages            func(childComplexity int, apiKeyID objects.GUID) int
@@ -1197,6 +1204,7 @@ type ComplexityRoot struct {
 		PromptProtectionRules        func(childComplexity int, after *entgql.Cursor[int], first *int, before *entgql.Cursor[int], last *int, orderBy *ent.PromptProtectionRuleOrder, where *ent.PromptProtectionRuleWhereInput) int
 		Prompts                      func(childComplexity int, after *entgql.Cursor[int], first *int, before *entgql.Cursor[int], last *int, orderBy *ent.PromptOrder, where *ent.PromptWhereInput) int
 		ProxyPresets                 func(childComplexity int) int
+		PublicModeSettings           func(childComplexity int) int
 		QueryChannels                func(childComplexity int, input biz.QueryChannelsInput) int
 		QueryModelChannelConnections func(childComplexity int, associations []*objects.ModelAssociation) int
 		QueryModels                  func(childComplexity int, input QueryModelsInput) int
@@ -2018,6 +2026,7 @@ type MutationResolver interface {
 	UpdateVideoStorageSettings(ctx context.Context, input biz.VideoStorageSettings) (bool, error)
 	UpdateQuotaEnforcementSettings(ctx context.Context, input UpdateQuotaEnforcementSettingsInput) (bool, error)
 	UpdateSecuritySettings(ctx context.Context, input UpdateSecuritySettingsInput) (bool, error)
+	UpdatePublicModeSettings(ctx context.Context, input UpdatePublicModeSettingsInput) (bool, error)
 	CheckProviderQuotas(ctx context.Context) (bool, error)
 	TriggerGcCleanup(ctx context.Context, input gc.TriggerGcCleanupInput) (bool, error)
 	SaveProxyPreset(ctx context.Context, input biz.ProxyPreset) (bool, error)
@@ -2139,6 +2148,7 @@ type QueryResolver interface {
 	VideoStorageSettings(ctx context.Context) (*biz.VideoStorageSettings, error)
 	QuotaEnforcementSettings(ctx context.Context) (*biz.QuotaEnforcementSettings, error)
 	SecuritySettings(ctx context.Context) (*biz.SecuritySettings, error)
+	PublicModeSettings(ctx context.Context) (*biz.PublicModeSettings, error)
 	ProxyPresets(ctx context.Context) ([]*biz.ProxyPreset, error)
 	UserAgentPassThroughSettings(ctx context.Context) (*UserAgentPassThroughSettings, error)
 	PassThroughSettings(ctx context.Context) (*PassThroughSettings, error)
@@ -5928,6 +5938,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.UpdatePromptStatus(childComplexity, args["id"].(objects.GUID), args["status"].(prompt.Status)), true
+	case "Mutation.updatePublicModeSettings":
+		if e.complexity.Mutation.UpdatePublicModeSettings == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_updatePublicModeSettings_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.UpdatePublicModeSettings(childComplexity, args["input"].(UpdatePublicModeSettingsInput)), true
 	case "Mutation.updateQuotaEnforcementSettings":
 		if e.complexity.Mutation.UpdateQuotaEnforcementSettings == nil {
 			break
@@ -6951,6 +6972,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.ProxyPreset.Username(childComplexity), true
 
+	case "PublicModeSettings.publicMode":
+		if e.complexity.PublicModeSettings.PublicMode == nil {
+			break
+		}
+
+		return e.complexity.PublicModeSettings.PublicMode(childComplexity), true
+	case "PublicModeSettings.registrationInviteCode":
+		if e.complexity.PublicModeSettings.RegistrationInviteCode == nil {
+			break
+		}
+
+		return e.complexity.PublicModeSettings.RegistrationInviteCode(childComplexity), true
+	case "PublicModeSettings.registrationInviteRequired":
+		if e.complexity.PublicModeSettings.RegistrationInviteRequired == nil {
+			break
+		}
+
+		return e.complexity.PublicModeSettings.RegistrationInviteRequired(childComplexity), true
+
 	case "Query.apiKeyProfileTemplates":
 		if e.complexity.Query.APIKeyProfileTemplates == nil {
 			break
@@ -7321,6 +7361,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.ProxyPresets(childComplexity), true
+	case "Query.publicModeSettings":
+		if e.complexity.Query.PublicModeSettings == nil {
+			break
+		}
+
+		return e.complexity.Query.PublicModeSettings(childComplexity), true
 	case "Query.queryChannels":
 		if e.complexity.Query.QueryChannels == nil {
 			break
@@ -10373,6 +10419,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputUpdateProjectUserInput,
 		ec.unmarshalInputUpdatePromptInput,
 		ec.unmarshalInputUpdatePromptProtectionRuleInput,
+		ec.unmarshalInputUpdatePublicModeSettingsInput,
 		ec.unmarshalInputUpdateQuotaEnforcementSettingsInput,
 		ec.unmarshalInputUpdateRequestInput,
 		ec.unmarshalInputUpdateRetryPolicyInput,
@@ -11869,6 +11916,17 @@ func (ec *executionContext) field_Mutation_updatePrompt_args(ctx context.Context
 		return nil, err
 	}
 	args["input"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_updatePublicModeSettings_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNUpdatePublicModeSettingsInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐUpdatePublicModeSettingsInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
 	return args, nil
 }
 
@@ -31365,6 +31423,47 @@ func (ec *executionContext) fieldContext_Mutation_updateSecuritySettings(ctx con
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_updatePublicModeSettings(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_updatePublicModeSettings,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().UpdatePublicModeSettings(ctx, fc.Args["input"].(UpdatePublicModeSettingsInput))
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_updatePublicModeSettings(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_updatePublicModeSettings_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_checkProviderQuotas(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -37464,6 +37563,93 @@ func (ec *executionContext) fieldContext_ProxyPreset_password(_ context.Context,
 	return fc, nil
 }
 
+func (ec *executionContext) _PublicModeSettings_publicMode(ctx context.Context, field graphql.CollectedField, obj *biz.PublicModeSettings) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PublicModeSettings_publicMode,
+		func(ctx context.Context) (any, error) {
+			return obj.PublicMode, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_PublicModeSettings_publicMode(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PublicModeSettings",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PublicModeSettings_registrationInviteCode(ctx context.Context, field graphql.CollectedField, obj *biz.PublicModeSettings) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PublicModeSettings_registrationInviteCode,
+		func(ctx context.Context) (any, error) {
+			return obj.RegistrationInviteCode, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_PublicModeSettings_registrationInviteCode(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PublicModeSettings",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PublicModeSettings_registrationInviteRequired(ctx context.Context, field graphql.CollectedField, obj *biz.PublicModeSettings) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PublicModeSettings_registrationInviteRequired,
+		func(ctx context.Context) (any, error) {
+			return obj.RegistrationInviteRequired, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_PublicModeSettings_registrationInviteRequired(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PublicModeSettings",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_node(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -40373,6 +40559,43 @@ func (ec *executionContext) fieldContext_Query_securitySettings(_ context.Contex
 				return ec.fieldContext_SecuritySettings_blockedIPs(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type SecuritySettings", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_publicModeSettings(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_publicModeSettings,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Query().PublicModeSettings(ctx)
+		},
+		nil,
+		ec.marshalNPublicModeSettings2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋbizᚐPublicModeSettings,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_publicModeSettings(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "publicMode":
+				return ec.fieldContext_PublicModeSettings_publicMode(ctx, field)
+			case "registrationInviteCode":
+				return ec.fieldContext_PublicModeSettings_registrationInviteCode(ctx, field)
+			case "registrationInviteRequired":
+				return ec.fieldContext_PublicModeSettings_registrationInviteRequired(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PublicModeSettings", field.Name)
 		},
 	}
 	return fc, nil
@@ -76040,6 +76263,40 @@ func (ec *executionContext) unmarshalInputUpdatePromptProtectionRuleInput(ctx co
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputUpdatePublicModeSettingsInput(ctx context.Context, obj any) (UpdatePublicModeSettingsInput, error) {
+	var it UpdatePublicModeSettingsInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"publicMode", "registrationInviteCode"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "publicMode":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("publicMode"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PublicMode = data
+		case "registrationInviteCode":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("registrationInviteCode"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RegistrationInviteCode = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputUpdateQuotaEnforcementSettingsInput(ctx context.Context, obj any) (UpdateQuotaEnforcementSettingsInput, error) {
 	var it UpdateQuotaEnforcementSettingsInput
 	asMap := map[string]any{}
@@ -87611,6 +87868,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "updatePublicModeSettings":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_updatePublicModeSettings(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "checkProviderQuotas":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_checkProviderQuotas(ctx, field)
@@ -90090,6 +90354,55 @@ func (ec *executionContext) _ProxyPreset(ctx context.Context, sel ast.SelectionS
 	return out
 }
 
+var publicModeSettingsImplementors = []string{"PublicModeSettings"}
+
+func (ec *executionContext) _PublicModeSettings(ctx context.Context, sel ast.SelectionSet, obj *biz.PublicModeSettings) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, publicModeSettingsImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PublicModeSettings")
+		case "publicMode":
+			out.Values[i] = ec._PublicModeSettings_publicMode(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "registrationInviteCode":
+			out.Values[i] = ec._PublicModeSettings_registrationInviteCode(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "registrationInviteRequired":
+			out.Values[i] = ec._PublicModeSettings_registrationInviteRequired(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var queryImplementors = []string{"Query"}
 
 func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) graphql.Marshaler {
@@ -91452,6 +91765,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_securitySettings(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "publicModeSettings":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_publicModeSettings(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -102847,6 +103182,20 @@ func (ec *executionContext) marshalNProxyType2githubᚗcomᚋloopljᚋaxonhubᚋ
 	return res
 }
 
+func (ec *executionContext) marshalNPublicModeSettings2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋbizᚐPublicModeSettings(ctx context.Context, sel ast.SelectionSet, v biz.PublicModeSettings) graphql.Marshaler {
+	return ec._PublicModeSettings(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNPublicModeSettings2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋbizᚐPublicModeSettings(ctx context.Context, sel ast.SelectionSet, v *biz.PublicModeSettings) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PublicModeSettings(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNQueryChannelInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋbizᚐQueryChannelsInput(ctx context.Context, v any) (biz.QueryChannelsInput, error) {
 	res, err := ec.unmarshalInputQueryChannelInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -104175,6 +104524,11 @@ func (ec *executionContext) unmarshalNUpdatePromptInput2githubᚗcomᚋloopljᚋ
 
 func (ec *executionContext) unmarshalNUpdatePromptProtectionRuleInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋentᚐUpdatePromptProtectionRuleInput(ctx context.Context, v any) (ent.UpdatePromptProtectionRuleInput, error) {
 	res, err := ec.unmarshalInputUpdatePromptProtectionRuleInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) unmarshalNUpdatePublicModeSettingsInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐUpdatePublicModeSettingsInput(ctx context.Context, v any) (UpdatePublicModeSettingsInput, error) {
+	res, err := ec.unmarshalInputUpdatePublicModeSettingsInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 

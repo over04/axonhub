@@ -11,6 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import { Header } from '@/components/layout/header';
 import { Main } from '@/components/layout/main';
 import { useStoragePolicy } from '@/features/system/data/system';
+import { usePermissions } from '@/hooks/usePermissions';
 import { type Request, useRequest } from '../data';
 import { RequestDetailContent } from './request-detail-content';
 
@@ -123,7 +124,8 @@ export default function RequestDetailPage() {
     select: (state) => (state.location.search ?? {}) as Record<string, unknown>,
   });
   const selectedProjectId = useSelectedProjectId();
-  const { data: storagePolicy } = useStoragePolicy();
+  const { hasSystemScope } = usePermissions();
+  const { data: storagePolicy } = useStoragePolicy({ enabled: hasSystemScope('read_settings') });
   const isLivePreviewEnabled = storagePolicy?.livePreview ?? false;
   const [previewRequest, setPreviewRequest] = useState<Request | null>(null);
   const [isPreviewStreaming, setIsPreviewStreaming] = useState(false);

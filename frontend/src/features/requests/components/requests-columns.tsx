@@ -30,13 +30,14 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
   const { t, i18n } = useTranslation();
   const locale = i18n.language === 'zh' ? zhCN : enUS;
   const permissions = useRequestPermissions();
-  const { hasScope } = usePermissions();
-  const { data: settings } = useGeneralSettings();
-  const { data: securitySettings } = useSecuritySettings();
+  const { hasSystemScope } = usePermissions();
+  const canReadSettings = hasSystemScope('read_settings');
+  const canManageSecuritySettings = hasSystemScope('write_settings');
+  const { data: settings } = useGeneralSettings(canReadSettings);
+  const { data: securitySettings } = useSecuritySettings(canManageSecuritySettings);
   const updateSecuritySettings = useUpdateSecuritySettings();
   const { navigateWithSearch } = usePaginationSearch({ defaultPageSize: 20 });
   const [displayMode, setDisplayMode] = useDisplayMode();
-  const canManageSecuritySettings = hasScope('write_settings');
 
   const blockedIPs = securitySettings?.blockedIPs ?? [];
 
@@ -538,7 +539,7 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
           <div className='font-mono text-xs font-medium'>
             {t('currencies.format', {
               val: cost,
-              currency: settings?.currencyCode,
+              currency: settings?.currencyCode ?? 'USD',
               locale: i18n.language === 'zh' ? 'zh-CN' : 'en-US',
               minimumFractionDigits: 6,
             })}

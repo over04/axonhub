@@ -520,6 +520,11 @@ type UpdateProjectUserInput struct {
 	RemoveRoleIDs []*objects.GUID `json:"removeRoleIDs,omitempty"`
 }
 
+type UpdatePublicModeSettingsInput struct {
+	PublicMode             *bool   `json:"publicMode,omitempty"`
+	RegistrationInviteCode *string `json:"registrationInviteCode,omitempty"`
+}
+
 type UpdateQuotaEnforcementSettingsInput struct {
 	Enabled *bool                     `json:"enabled,omitempty"`
 	Mode    *biz.QuotaEnforcementMode `json:"mode,omitempty"`

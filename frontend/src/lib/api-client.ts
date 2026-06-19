@@ -133,6 +133,11 @@ export const systemApi = {
 
 // Auth API endpoints
 export const authApi = {
+  publicSettings: (): Promise<{
+    publicMode: boolean;
+    inviteCodeRequired: boolean;
+  }> => apiRequest('/admin/auth/public-settings'),
+
   signIn: (data: {
     email: string;
     password: string;
@@ -144,6 +149,28 @@ export const authApi = {
       method: 'POST',
       body: data,
     }),
+
+  signUp: (data: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+    inviteCode?: string;
+  }): Promise<{
+    user: AuthUser;
+    token: string;
+  }> =>
+    apiRequest('/admin/auth/signup', {
+      method: 'POST',
+      body: data,
+    }),
+
+  playgroundModels: (): Promise<{
+    models: {
+      id: string;
+      name: string;
+    }[];
+  }> => apiRequest('/admin/playground/models', { requireAuth: true }),
 
   getOIDCProviders: (): Promise<{
     data: {

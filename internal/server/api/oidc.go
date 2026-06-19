@@ -17,17 +17,21 @@ import (
 )
 
 type OIDCHandlers struct {
-	oidc      *biz.OIDCService
-	auth      *biz.AuthService
-	publicURL string
+	oidc         *biz.OIDCService
+	auth         *biz.AuthService
+	registration *biz.RegistrationService
+	userService  *biz.UserService
+	publicURL    string
 }
 
 type OIDCHandlerParams struct {
 	fx.In
 
-	OIDCService *biz.OIDCService
-	AuthService *biz.AuthService
-	PublicURL   string `name:"public_url"`
+	OIDCService         *biz.OIDCService
+	AuthService         *biz.AuthService
+	RegistrationService *biz.RegistrationService
+	UserService         *biz.UserService
+	PublicURL           string `name:"public_url"`
 }
 
 func NewOIDCHandlers(params OIDCHandlerParams) *OIDCHandlers {
@@ -36,9 +40,11 @@ func NewOIDCHandlers(params OIDCHandlerParams) *OIDCHandlers {
 	}
 
 	return &OIDCHandlers{
-		oidc:      params.OIDCService,
-		auth:      params.AuthService,
-		publicURL: params.PublicURL,
+		oidc:         params.OIDCService,
+		auth:         params.AuthService,
+		registration: params.RegistrationService,
+		userService:  params.UserService,
+		publicURL:    params.PublicURL,
 	}
 }
 
@@ -216,10 +222,21 @@ func (h *OIDCHandlers) Exchange(c *gin.Context) {
 		return
 	}
 
+	if _, err := h.registration.EnsurePersonalProject(c.Request.Context(), user.ID); err != nil {
+		log.Warn(c.Request.Context(), "failed to ensure personal project during oidc exchange", log.Cause(err))
+	}
+
+	fullUser, err := h.userService.GetUserByID(c.Request.Context(), user.ID)
+	if err != nil {
+		log.Error(c.Request.Context(), "failed to load user during oidc exchange", log.Cause(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
 			"token": token,
-			"user":  user,
+			"user":  biz.ConvertUserToUserInfo(c.Request.Context(), fullUser),
 		},
 	})
 }

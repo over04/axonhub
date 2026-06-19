@@ -14,6 +14,7 @@ import { Main } from '@/components/layout/main';
 import { ServerSidePagination } from '@/components/server-side-pagination';
 import type { Trace } from '@/features/traces/data/schema';
 import { useGeneralSettings } from '@/features/system/data/system';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useThreadDetail } from '../data/threads';
 import { TraceCard } from './trace-card';
 import { TraceDrawer } from './trace-drawer';
@@ -33,6 +34,7 @@ export default function ThreadDetailPage() {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const locale = i18n.language === 'zh' ? zhCN : enUS;
+  const { hasSystemScope } = usePermissions();
   
   // 合并 Drawer 相关状态
   const [drawerState, setDrawerState] = useState<{
@@ -40,7 +42,7 @@ export default function ThreadDetailPage() {
     traceId: string | null;
   }>({ open: false, traceId: null });
 
-  const { data: settings } = useGeneralSettings();
+  const { data: settings } = useGeneralSettings(hasSystemScope('read_settings'));
 
   const { pageSize, setCursors, setPageSize, resetCursor, paginationArgs, getSearchParams } = usePaginationSearch({
     defaultPageSize: 20,
@@ -199,7 +201,7 @@ export default function ThreadDetailPage() {
                 <p className='text-base sm:text-lg font-semibold'>
                   {t('currencies.format', {
                     val: thread.usageMetadata.totalCost,
-                    currency: settings?.currencyCode,
+                    currency: settings?.currencyCode ?? 'USD',
                     locale: i18n.language === 'zh' ? 'zh-CN' : 'en-US',
                     minimumFractionDigits: 6,
                   })}

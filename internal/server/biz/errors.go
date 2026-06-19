@@ -20,4 +20,7 @@ var (
 	ErrSystemNotInitialized   = errors.New("system not initialized")
 	ErrOIDCLoginRequired      = errors.New("OIDC user without password, please login via OIDC or set a password")
 	ErrProjectNotFound        = errors.New("project not found")
+	ErrPublicModeDisabled     = errors.New("public registration is disabled")
+	ErrInvalidInviteCode      = errors.New("invalid invite code")
+	ErrEmailAlreadyExists     = errors.New("email already exists")
 )

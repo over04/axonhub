@@ -187,6 +187,17 @@ input UpdateSecuritySettingsInput {
   blockedIPs: [String!]
 }
 
+type PublicModeSettings {
+  publicMode: Boolean!
+  registrationInviteCode: String!
+  registrationInviteRequired: Boolean!
+}
+
+input UpdatePublicModeSettingsInput {
+  publicMode: Boolean
+  registrationInviteCode: String
+}
+
 type SystemModelSettings {
   fallbackToChannelsOnModelNotFound: Boolean!
   queryAllChannelModels: Boolean!
@@ -370,6 +381,7 @@ extend type Mutation {
   updateVideoStorageSettings(input: UpdateVideoStorageSettingsInput!): Boolean!
   updateQuotaEnforcementSettings(input: UpdateQuotaEnforcementSettingsInput!): Boolean!
   updateSecuritySettings(input: UpdateSecuritySettingsInput!): Boolean!
+  updatePublicModeSettings(input: UpdatePublicModeSettingsInput!): Boolean!
   checkProviderQuotas: Boolean!
   triggerGcCleanup(input: TriggerGcCleanupInput!): Boolean!
   saveProxyPreset(input: SaveProxyPresetInput!): Boolean!
@@ -438,6 +450,7 @@ extend type Query {
   videoStorageSettings: VideoStorageSettings!
   quotaEnforcementSettings: QuotaEnforcementSettings!
   securitySettings: SecuritySettings!
+  publicModeSettings: PublicModeSettings!
   proxyPresets: [ProxyPreset!]!
   userAgentPassThroughSettings: UserAgentPassThroughSettings!
   passThroughSettings: PassThroughSettings!

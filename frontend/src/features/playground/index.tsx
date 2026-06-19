@@ -2,11 +2,13 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { IconTrash, IconRefresh } from '@tabler/icons-react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
+import { useQuery } from '@tanstack/react-query';
 import { MessageSquare, RefreshCcw, Copy } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useSelectedProjectId } from '@/stores/projectStore';
+import { authApi } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,13 +25,15 @@ import { Reasoning, ReasoningTrigger, ReasoningContent } from '@/components/ai-e
 import { Response as UIResponse } from '@/components/ai-elements/response';
 import { AutoCompleteSelect } from '@/components/auto-complete-select';
 import { useQueryChannels } from '@/features/channels/data/channels';
-import { useQueryModels } from '@/features/models/data/models';
+import { usePermissions } from '@/hooks/usePermissions';
 
 type PlaygroundModelSource = 'channel' | 'model_gateway';
 
 export default function Playground() {
   const { t } = useTranslation();
-  const [modelSource, setModelSource] = useState<PlaygroundModelSource>('channel');
+  const { hasSystemScope } = usePermissions();
+  const canReadChannels = hasSystemScope('read_channels');
+  const [modelSource, setModelSource] = useState<PlaygroundModelSource>(canReadChannels ? 'channel' : 'model_gateway');
   const [selectedChannel, setSelectedChannel] = useState<string>('');
   const [model, setModel] = useState('');
   const [temperature, setTemperature] = useState(0.6);
@@ -79,19 +83,12 @@ export default function Playground() {
     where: {
       statusIn: ['enabled', 'disabled'],
     },
-  });
+  }, { disableAutoFetch: !canReadChannels });
   const isModelGatewaySource = modelSource === 'model_gateway';
-  const { data: modelsData, isLoading: modelsLoading } = useQueryModels(
-    {
-      first: 10000,
-      orderBy: { field: 'NAME', direction: 'ASC' },
-      where: {
-        statusIn: ['enabled'],
-        typeIn: ['chat'],
-      },
-    },
-    { enabled: isModelGatewaySource }
-  );
+  const { data: playgroundModelsData, isLoading: playgroundModelsLoading } = useQuery({
+    queryKey: ['playgroundModels'],
+    queryFn: () => authApi.playgroundModels(),
+  });
 
   const [input, setInput] = useState('');
 
@@ -189,6 +186,7 @@ export default function Playground() {
       e.preventDefault();
       // block submit while a request is in-flight
       if (isLoading) return;
+      if (!modelRef.current.trim()) return;
       if (message.text?.trim()) {
         sendMessage({ text: message.text });
         setInput('');
@@ -240,15 +238,15 @@ export default function Playground() {
   }, [channelsData]);
 
   const modelPageModelOptions = useMemo(() => {
-    if (!modelsData?.edges) return [];
-    return modelsData.edges.map((edge) => {
-      const modelID = edge.node.modelID;
+    if (!playgroundModelsData?.models) return [];
+    return playgroundModelsData.models.map((item) => {
+      const modelID = item.id;
       return {
         value: modelID,
-        label: edge.node.name || modelID,
+        label: item.name || modelID,
       };
     });
-  }, [modelsData]);
+  }, [playgroundModelsData]);
 
   // 根据选中渠道过滤出模型列表
   const modelOptions = useMemo(() => {
@@ -262,7 +260,7 @@ export default function Playground() {
     }));
   }, [channelsData, isModelGatewaySource, modelPageModelOptions, selectedChannel]);
 
-  const selectedModelSourceLoading = isModelGatewaySource ? modelsLoading : channelsLoading;
+  const selectedModelSourceLoading = isModelGatewaySource ? playgroundModelsLoading : channelsLoading;
 
   // 处理渠道选择，自动选第一个模型
   const handleChannelChange = useCallback(
@@ -278,6 +276,7 @@ export default function Playground() {
   const handleModelSourceChange = useCallback(
     (source: string) => {
       const nextSource = source as PlaygroundModelSource;
+      if (nextSource === 'channel' && !canReadChannels) return;
       setModelSource(nextSource);
       if (nextSource === 'model_gateway') {
         setModel(modelPageModelOptions[0]?.value ?? '');
@@ -286,15 +285,22 @@ export default function Playground() {
       const channelEdge = channelsData?.edges?.find((edge) => edge.node.id === selectedChannel);
       setModel(channelEdge?.node.supportedModels[0] ?? '');
     },
-    [channelsData, modelPageModelOptions, selectedChannel]
+    [canReadChannels, channelsData, modelPageModelOptions, selectedChannel]
   );
 
   // 初始化：默认选第一个渠道和第一个模型
   useEffect(() => {
-    if (!selectedChannel && !channelsLoading && channelOptions.length > 0) {
+    if (canReadChannels && !selectedChannel && !channelsLoading && channelOptions.length > 0) {
       handleChannelChange(channelOptions[0].value);
     }
-  }, [channelOptions, channelsLoading, handleChannelChange, selectedChannel]);
+  }, [canReadChannels, channelOptions, channelsLoading, handleChannelChange, selectedChannel]);
+
+  useEffect(() => {
+    if (!canReadChannels && modelSource !== 'model_gateway') {
+      setModelSource('model_gateway');
+      setSelectedChannel('');
+    }
+  }, [canReadChannels, modelSource]);
 
   useEffect(() => {
     if (isModelGatewaySource && !model && modelPageModelOptions.length > 0) {
@@ -330,15 +336,17 @@ export default function Playground() {
 
           <ScrollArea className='min-h-0 flex-1 p-4'>
             <div className='space-y-6'>
-              <div className='space-y-3'>
-                <Label className='text-xs font-semibold'>{t('playground.settings.modelSource')}</Label>
-                <Tabs value={modelSource} onValueChange={handleModelSourceChange}>
-                  <TabsList className='grid w-full grid-cols-2'>
-                    <TabsTrigger value='channel'>{t('playground.settings.channel')}</TabsTrigger>
-                    <TabsTrigger value='model_gateway'>{t('playground.settings.modelGateway')}</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
+              {canReadChannels && (
+                <div className='space-y-3'>
+                  <Label className='text-xs font-semibold'>{t('playground.settings.modelSource')}</Label>
+                  <Tabs value={modelSource} onValueChange={handleModelSourceChange}>
+                    <TabsList className='grid w-full grid-cols-2'>
+                      <TabsTrigger value='channel'>{t('playground.settings.channel')}</TabsTrigger>
+                      <TabsTrigger value='model_gateway'>{t('playground.settings.modelGateway')}</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
+              )}
 
               {modelSource === 'channel' && (
                 <div className='space-y-3'>
@@ -533,7 +541,7 @@ export default function Playground() {
               />
               <PromptInputSubmit
                 status={status}
-                disabled={status === 'ready' ? !input.trim() : false}
+                disabled={status === 'ready' ? !input.trim() || !model.trim() : false}
                 // className='absolute right-2 top-1/2 -translate-y-1/2'
                 className='absolute right-3 bottom-3'
                 onClick={(e) => {

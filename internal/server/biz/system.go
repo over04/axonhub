@@ -25,6 +25,7 @@ import (
 	"github.com/looplj/axonhub/internal/pkg/xcache"
 	"github.com/looplj/axonhub/internal/pkg/xregexp"
 	"github.com/looplj/axonhub/internal/pkg/xtime"
+	"github.com/looplj/axonhub/internal/scopes"
 	"github.com/looplj/axonhub/llm/httpclient"
 )
 
@@ -117,6 +118,12 @@ const (
 	// SystemKeySecuritySettings is the key used to store security settings.
 	// The value is JSON-encoded SecuritySettings struct.
 	SystemKeySecuritySettings = "security_settings"
+
+	// SystemKeyPublicMode controls public registration and personal project behavior.
+	SystemKeyPublicMode = "system_public_mode"
+
+	// SystemKeyRegistrationInviteCode stores the single global invite code for public registration.
+	SystemKeyRegistrationInviteCode = "registration_invite_code"
 )
 
 // SystemGeneralSettings represents general system configuration settings.
@@ -212,6 +219,17 @@ type QuotaEnforcementSettings struct {
 type SecuritySettings struct {
 	// BlockedIPs contains IP addresses or CIDR ranges that cannot use external APIs.
 	BlockedIPs []string `json:"blocked_ips"`
+}
+
+type PublicAuthSettings struct {
+	PublicMode         bool `json:"publicMode"`
+	InviteCodeRequired bool `json:"inviteCodeRequired"`
+}
+
+type PublicModeSettings struct {
+	PublicMode                 bool   `json:"publicMode"`
+	RegistrationInviteCode     string `json:"registrationInviteCode"`
+	RegistrationInviteRequired bool   `json:"registrationInviteRequired"`
 }
 
 // BackupFrequency represents how often automatic backups should run.
@@ -865,6 +883,101 @@ func (s *SystemService) Title(ctx context.Context) (string, error) {
 // SetTitle sets the browser page title.
 func (s *SystemService) SetTitle(ctx context.Context, title string) error {
 	return s.setSystemValue(ctx, SystemKeyTitle, title)
+}
+
+func (s *SystemService) PublicMode(ctx context.Context) (bool, error) {
+	value, err := authz.RunWithSystemBypass(ctx, "system-public-mode", func(bypassCtx context.Context) (string, error) {
+		return s.getSystemValue(bypassCtx, SystemKeyPublicMode)
+	})
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("failed to get public mode: %w", err)
+	}
+
+	return strings.EqualFold(value, "true"), nil
+}
+
+func (s *SystemService) SetPublicMode(ctx context.Context, enabled bool) error {
+	value := "false"
+	if enabled {
+		value = "true"
+	}
+
+	return s.setSystemValue(ctx, SystemKeyPublicMode, value)
+}
+
+func (s *SystemService) RegistrationInviteCode(ctx context.Context) (string, error) {
+	value, err := authz.RunWithSystemBypass(ctx, "system-registration-invite-code", func(bypassCtx context.Context) (string, error) {
+		return s.getSystemValue(bypassCtx, SystemKeyRegistrationInviteCode)
+	})
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("failed to get registration invite code: %w", err)
+	}
+
+	return value, nil
+}
+
+func (s *SystemService) RegistrationInviteCodeForSettings(ctx context.Context) (string, error) {
+	if err := authz.RequireScope(ctx, scopes.ScopeReadSettings); err != nil {
+		return "", err
+	}
+
+	value, err := s.getSystemValue(ctx, SystemKeyRegistrationInviteCode)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("failed to get registration invite code: %w", err)
+	}
+
+	return value, nil
+}
+
+func (s *SystemService) SetRegistrationInviteCode(ctx context.Context, code string) error {
+	return s.setSystemValue(ctx, SystemKeyRegistrationInviteCode, strings.TrimSpace(code))
+}
+
+func (s *SystemService) PublicAuthSettings(ctx context.Context) (*PublicAuthSettings, error) {
+	publicMode, err := s.PublicMode(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	inviteCode, err := s.RegistrationInviteCode(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PublicAuthSettings{
+		PublicMode:         publicMode,
+		InviteCodeRequired: strings.TrimSpace(inviteCode) != "",
+	}, nil
+}
+
+func (s *SystemService) PublicModeSettings(ctx context.Context) (*PublicModeSettings, error) {
+	publicMode, err := s.PublicMode(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	inviteCode, err := s.RegistrationInviteCodeForSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PublicModeSettings{
+		PublicMode:                 publicMode,
+		RegistrationInviteCode:     inviteCode,
+		RegistrationInviteRequired: strings.TrimSpace(inviteCode) != "",
+	}, nil
 }
 
 func (s *SystemService) getSystemValue(ctx context.Context, key string) (string, error) {

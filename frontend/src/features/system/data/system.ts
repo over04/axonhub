@@ -259,6 +259,17 @@ export interface UpdateSecuritySettingsInput {
   blockedIPs?: string[];
 }
 
+export interface PublicModeSettings {
+  publicMode: boolean;
+  registrationInviteCode: string;
+  registrationInviteRequired: boolean;
+}
+
+export interface UpdatePublicModeSettingsInput {
+  publicMode?: boolean;
+  registrationInviteCode?: string;
+}
+
 export interface StoragePolicy {
   storeChunks: boolean;
   livePreview: boolean;
@@ -463,11 +474,12 @@ export function useBrandSettings(options?: { enabled?: boolean }) {
   });
 }
 
-export function useStoragePolicy() {
+export function useStoragePolicy(options?: { enabled?: boolean }) {
   const { handleError } = useErrorHandler();
 
   return useQuery({
     queryKey: ['storagePolicy'],
+    enabled: options?.enabled ?? true,
     queryFn: async () => {
       try {
         const data = await graphqlRequest<{ storagePolicy: StoragePolicy }>(STORAGE_POLICY_QUERY);
@@ -912,6 +924,22 @@ const UPDATE_SYSTEM_GENERAL_SETTINGS_MUTATION = `
   }
 `;
 
+const PUBLIC_MODE_SETTINGS_QUERY = `
+  query PublicModeSettings {
+    publicModeSettings {
+      publicMode
+      registrationInviteCode
+      registrationInviteRequired
+    }
+  }
+`;
+
+const UPDATE_PUBLIC_MODE_SETTINGS_MUTATION = `
+  mutation UpdatePublicModeSettings($input: UpdatePublicModeSettingsInput!) {
+    updatePublicModeSettings(input: $input)
+  }
+`;
+
 const VIDEO_STORAGE_SETTINGS_QUERY = `
   query VideoStorageSettings {
     videoStorageSettings {
@@ -1070,7 +1098,7 @@ export function useUpdateChannelSetting() {
   });
 }
 
-export function useGeneralSettings() {
+export function useGeneralSettings(enabled = true) {
   const { handleError } = useErrorHandler();
 
   return useQuery({
@@ -1084,6 +1112,7 @@ export function useGeneralSettings() {
         throw error;
       }
     },
+    enabled,
     placeholderData: (previousData) => previousData,
   });
 }
@@ -1098,6 +1127,42 @@ export function useUpdateGeneralSettings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['generalSettings'] });
+      toast.success(i18n.t('common.success.systemUpdated'));
+    },
+    onError: () => {
+      toast.error(i18n.t('common.errors.systemUpdateFailed'));
+    },
+  });
+}
+
+export function usePublicModeSettings() {
+  const { handleError } = useErrorHandler();
+
+  return useQuery({
+    queryKey: ['publicModeSettings'],
+    queryFn: async () => {
+      try {
+        const data = await graphqlRequest<{ publicModeSettings: PublicModeSettings }>(PUBLIC_MODE_SETTINGS_QUERY);
+        return data.publicModeSettings;
+      } catch (error) {
+        handleError(error, i18n.t('common.errors.internalServerError'));
+        throw error;
+      }
+    },
+  });
+}
+
+export function useUpdatePublicModeSettings() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: UpdatePublicModeSettingsInput) => {
+      const data = await graphqlRequest<{ updatePublicModeSettings: boolean }>(UPDATE_PUBLIC_MODE_SETTINGS_MUTATION, { input });
+      return data.updatePublicModeSettings;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['publicModeSettings'] });
+      queryClient.invalidateQueries({ queryKey: ['publicAuthSettings'] });
       toast.success(i18n.t('common.success.systemUpdated'));
     },
     onError: () => {
@@ -1141,7 +1206,7 @@ export function useUpdateVideoStorageSettings() {
   });
 }
 
-export function useSecuritySettings() {
+export function useSecuritySettings(enabled = true) {
   const { handleError } = useErrorHandler();
 
   return useQuery({
@@ -1155,6 +1220,7 @@ export function useSecuritySettings() {
         throw error;
       }
     },
+    enabled,
   });
 }
 
@@ -1659,7 +1725,7 @@ export interface UpdateQuotaEnforcementSettingsInput {
   mode?: QuotaEnforcementMode;
 }
 
-export function useQuotaEnforcementSettings() {
+export function useQuotaEnforcementSettings(enabled = true) {
   const { handleError } = useErrorHandler();
 
   return useQuery({
@@ -1673,6 +1739,7 @@ export function useQuotaEnforcementSettings() {
         throw error;
       }
     },
+    enabled,
   });
 }
 

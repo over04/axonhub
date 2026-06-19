@@ -17,8 +17,11 @@ import {
   useUpdateUserAgentPassThroughSettings,
   usePassThroughSettings,
   useUpdatePassThroughSettings,
+  usePublicModeSettings,
+  useUpdatePublicModeSettings,
 } from '../data/system';
 import { GMTTimeZoneOptions } from '../data/timezones';
+import { Input } from '@/components/ui/input';
 
 export function GeneralSettings() {
   const { t } = useTranslation();
@@ -35,6 +38,11 @@ export function GeneralSettings() {
   const { data: ptSettings, isLoading: isLoadingPTSettings } = usePassThroughSettings();
   const updatePTSettings = useUpdatePassThroughSettings();
   const [passThroughEnabled, setPassThroughEnabled] = useState(false);
+
+  const { data: publicModeSettings, isLoading: isLoadingPublicModeSettings } = usePublicModeSettings();
+  const updatePublicModeSettings = useUpdatePublicModeSettings();
+  const [publicModeEnabled, setPublicModeEnabled] = useState(false);
+  const [registrationInviteCode, setRegistrationInviteCode] = useState('');
 
   const [currencyCode, setCurrencyCode] = useState('USD');
   const [timezone, setTimezone] = useState('UTC');
@@ -72,6 +80,13 @@ export function GeneralSettings() {
     }
   }, [ptSettings]);
 
+  useEffect(() => {
+    if (publicModeSettings) {
+      setPublicModeEnabled(publicModeSettings.publicMode);
+      setRegistrationInviteCode(publicModeSettings.registrationInviteCode || '');
+    }
+  }, [publicModeSettings]);
+
   const handleSave = async () => {
     setIsLoading(true);
     try {
@@ -104,6 +119,23 @@ export function GeneralSettings() {
       // Revert state on error
       setPassThroughEnabled(previousValue);
     }
+  };
+
+  const handlePublicModeChange = async (enabled: boolean) => {
+    const previousValue = publicModeEnabled;
+    setPublicModeEnabled(enabled);
+    try {
+      await updatePublicModeSettings.mutateAsync({ publicMode: enabled });
+    } catch {
+      setPublicModeEnabled(previousValue);
+    }
+  };
+
+  const handlePublicModeSave = async () => {
+    await updatePublicModeSettings.mutateAsync({
+      publicMode: publicModeEnabled,
+      registrationInviteCode: registrationInviteCode.trim(),
+    });
   };
 
   const hasChanges = settings
@@ -186,6 +218,47 @@ export function GeneralSettings() {
               onCheckedChange={handlePassThroughChange}
               disabled={isLoadingPTSettings || updatePTSettings.isPending}
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('system.publicMode.title')}</CardTitle>
+          <CardDescription>{t('system.publicMode.description')}</CardDescription>
+        </CardHeader>
+        <CardContent className='space-y-4'>
+          <div className='flex items-center justify-between gap-4'>
+            <div className='space-y-0.5'>
+              <Label htmlFor='public-mode'>{t('system.publicMode.enabled.label')}</Label>
+              <div className='text-muted-foreground text-sm'>{t('system.publicMode.enabled.description')}</div>
+            </div>
+            <Switch
+              id='public-mode'
+              checked={publicModeEnabled}
+              onCheckedChange={handlePublicModeChange}
+              disabled={isLoadingPublicModeSettings || updatePublicModeSettings.isPending}
+            />
+          </div>
+          <div className='space-y-2'>
+            <Label htmlFor='registration-invite-code'>{t('system.publicMode.inviteCode.label')}</Label>
+            <div className='flex max-w-md gap-2'>
+              <Input
+                id='registration-invite-code'
+                value={registrationInviteCode}
+                onChange={(event) => setRegistrationInviteCode(event.target.value)}
+                placeholder={t('system.publicMode.inviteCode.placeholder')}
+                disabled={isLoadingPublicModeSettings || updatePublicModeSettings.isPending}
+              />
+              <Button
+                type='button'
+                variant='outline'
+                onClick={handlePublicModeSave}
+                disabled={isLoadingPublicModeSettings || updatePublicModeSettings.isPending}
+              >
+                {updatePublicModeSettings.isPending ? t('system.buttons.saving') : t('system.buttons.save')}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

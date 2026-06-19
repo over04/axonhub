@@ -86,6 +86,8 @@ func SetupRoutes(server *Server, handlers Handlers, client *ent.Client, services
 		unSecureAdminGroup.POST("/system/initialize", handlers.System.InitializeSystem)
 		// User Login - DO NOT AUTH
 		unSecureAdminGroup.POST("/auth/signin", handlers.Auth.SignIn)
+		unSecureAdminGroup.GET("/auth/public-settings", handlers.Auth.PublicSettings)
+		unSecureAdminGroup.POST("/auth/signup", handlers.Auth.SignUp)
 	}
 
 	oauthGroup := server.Group("/oauth", middleware.WithTimeout(server.Config.RequestTimeout))
@@ -120,6 +122,11 @@ func SetupRoutes(server *Server, handlers Handlers, client *ent.Client, services
 		adminGroup.GET("/oidc/link/:provider", handlers.OIDC.GetLinkAuthorizeURL)
 
 		// Playground API with channel specification support
+		adminGroup.GET(
+			"/playground/models",
+			middleware.WithTimeout(server.Config.RequestTimeout),
+			handlers.Playground.Models,
+		)
 		adminGroup.POST(
 			"/playground/chat",
 			middleware.WithTimeout(server.Config.LLMRequestTimeout),

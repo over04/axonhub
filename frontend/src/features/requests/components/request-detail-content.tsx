@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { JsonViewer } from '@/components/json-tree-view';
 import { useGeneralSettings } from '@/features/system/data/system';
 import { getTokenFromStorage } from '@/stores/authStore';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useUsageLogs } from '../data/usage-logs';
 import { type Request, useRequest, useRequestExecutions } from '../data';
 import { ChunksDialog } from './chunks-dialog';
@@ -45,7 +46,8 @@ export function RequestDetailContent({ requestId, projectId, previewRequest, isP
   const [audioLoadFailed, setAudioLoadFailed] = useState(false);
   const [responseView, setResponseView] = useState<'preview' | 'json'>('preview');
 
-  const { data: settings } = useGeneralSettings();
+  const { hasSystemScope } = usePermissions();
+  const { data: settings } = useGeneralSettings(hasSystemScope('read_settings'));
   const { data: requestData, isLoading } = useRequest(requestId, { projectId, disableAutoRefresh: isPreviewStreaming });
   const request = previewRequest ?? requestData;
   const {
@@ -400,7 +402,7 @@ export function RequestDetailContent({ requestId, projectId, previewRequest, isP
           const formatCurrency = (val: number) =>
             t('currencies.format', {
               val,
-              currency: settings?.currencyCode,
+              currency: settings?.currencyCode ?? 'USD',
               locale: i18n.language === 'zh' ? 'zh-CN' : 'en-US',
               minimumFractionDigits: 6,
             });

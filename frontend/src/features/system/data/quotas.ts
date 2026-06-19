@@ -361,7 +361,7 @@ function parseChannelNode(node: QueryChannelsResponse['queryChannels']['edges'][
   };
 }
 
-export function useProviderQuotaStatuses() {
+export function useProviderQuotaStatuses(enabled = true) {
   const { data } = useQuery({
     queryKey: ['provider-quotas'],
     queryFn: async () => {
@@ -372,6 +372,7 @@ export function useProviderQuotaStatuses() {
       };
       return graphqlRequest<QueryChannelsResponse>(PROVIDER_QUOTA_STATUSES_QUERY, { input });
     },
+    enabled,
     refetchInterval: 60000,
     refetchIntervalInBackground: true,
   });

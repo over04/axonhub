@@ -229,6 +229,23 @@ func (r *mutationResolver) UpdateSecuritySettings(ctx context.Context, input Upd
 	return true, nil
 }
 
+// UpdatePublicModeSettings is the resolver for the updatePublicModeSettings field.
+func (r *mutationResolver) UpdatePublicModeSettings(ctx context.Context, input UpdatePublicModeSettingsInput) (bool, error) {
+	if input.PublicMode != nil {
+		if err := r.systemService.SetPublicMode(ctx, *input.PublicMode); err != nil {
+			return false, fmt.Errorf("failed to update public mode: %w", err)
+		}
+	}
+
+	if input.RegistrationInviteCode != nil {
+		if err := r.systemService.SetRegistrationInviteCode(ctx, *input.RegistrationInviteCode); err != nil {
+			return false, fmt.Errorf("failed to update registration invite code: %w", err)
+		}
+	}
+
+	return true, nil
+}
+
 // CheckProviderQuotas is the resolver for the checkProviderQuotas field.
 func (r *mutationResolver) CheckProviderQuotas(ctx context.Context) (bool, error) {
 	if r.providerQuotaService == nil {
@@ -506,6 +523,15 @@ func (r *queryResolver) QuotaEnforcementSettings(ctx context.Context) (*biz.Quot
 // SecuritySettings is the resolver for the securitySettings field.
 func (r *queryResolver) SecuritySettings(ctx context.Context) (*biz.SecuritySettings, error) {
 	return r.systemService.SecuritySettings(ctx)
+}
+
+// PublicModeSettings is the resolver for the publicModeSettings field.
+func (r *queryResolver) PublicModeSettings(ctx context.Context) (*biz.PublicModeSettings, error) {
+	if err := authz.RequireScope(ctx, scopes.ScopeReadSettings); err != nil {
+		return nil, fmt.Errorf("permission denied: requires read:settings scope")
+	}
+
+	return r.systemService.PublicModeSettings(ctx)
 }
 
 // ProxyPresets is the resolver for the proxyPresets field.

@@ -14,6 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import { Header } from '@/components/layout/header';
 import { Main } from '@/components/layout/main';
 import { useGeneralSettings } from '@/features/system/data/system';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useTraceWithSegments } from '../data';
 import { Segment, Span, parseRawRootSegment } from '../data/schema';
 import { SpanSection } from './span-section';
@@ -33,9 +34,10 @@ export default function TraceDetailPage() {
   const [viewMode, setViewMode] = useState<'flat' | 'flow' | 'tree'>('flat');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const { getSearchParams } = usePaginationSearch({ defaultPageSize: 20 });
+  const { hasSystemScope } = usePermissions();
 
   const { data: trace, isLoading, refetch } = useTraceWithSegments(traceId);
-  const { data: settings } = useGeneralSettings();
+  const { data: settings } = useGeneralSettings(hasSystemScope('read_settings'));
 
   // Parse rawRootSegment JSON once per trace
   // 仅解析 rawRootSegment（完整 JSON）
@@ -192,7 +194,7 @@ export default function TraceDetailPage() {
                       <p className='text-base sm:text-lg font-semibold'>
                         {t('currencies.format', {
                           val: trace.usageMetadata.totalCost,
-                          currency: settings?.currencyCode,
+                          currency: settings?.currencyCode ?? 'USD',
                           locale: i18n.language === 'zh' ? 'zh-CN' : 'en-US',
                           minimumFractionDigits: 6,
                         })}

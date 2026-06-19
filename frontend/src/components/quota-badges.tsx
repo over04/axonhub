@@ -14,6 +14,7 @@ import {
   ProviderApertisQuotaData,
 } from '@/features/system/data/quotas';
 import { useQuotaEnforcementSettings, type QuotaEnforcementMode } from '@/features/system/data/system';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const syntheticWeeklyRegenTickPct = 0.02;
 
@@ -1069,10 +1070,14 @@ function QuotaBadgeTrigger({ channels }: { channels: ProviderQuotaChannel[] }) {
 
 export function QuotaBadges({ isRefreshing, onRefresh }: { isRefreshing: boolean; onRefresh: () => void }) {
   const { t } = useTranslation();
-  const channels = useProviderQuotaStatuses();
-  const { data: enforcementSettings } = useQuotaEnforcementSettings();
+  const { hasSystemScope } = usePermissions();
+  const canReadProviderQuotas = hasSystemScope('read_channels');
+
+  const channels = useProviderQuotaStatuses(canReadProviderQuotas);
+  const { data: enforcementSettings } = useQuotaEnforcementSettings(canReadProviderQuotas);
   const enforcementMode = enforcementSettings?.enabled ? enforcementSettings.mode : null;
 
+  if (!canReadProviderQuotas) return null;
   if (channels.length === 0) return null;
 
   const groupedChannels = channels.reduce((acc: ProviderQuotaChannel[], channel: ProviderQuotaChannel) => {

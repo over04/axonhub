@@ -14,6 +14,14 @@ export interface SignInInput {
   password: string;
 }
 
+export interface SignUpInput {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  inviteCode?: string;
+}
+
 interface MeResponse {
   me: AuthUser;
 }
@@ -80,6 +88,43 @@ export function useSignIn() {
     },
     onError: (error: any) => {
       const errorMessage = error.message || 'Failed to sign in';
+      toast.error(errorMessage);
+    },
+  });
+}
+
+export function usePublicAuthSettings() {
+  return useQuery({
+    queryKey: ['publicAuthSettings'],
+    queryFn: () => authApi.publicSettings(),
+    retry: false,
+  });
+}
+
+export function useSignUp() {
+  const { setUser, setAccessToken } = useAuthStore((state) => state.auth);
+  const router = useRouter();
+
+  return useMutation({
+    mutationFn: async (input: SignUpInput) => {
+      return await authApi.signUp(input);
+    },
+    onSuccess: (data) => {
+      setTokenToStorage(data.token);
+
+      const userLanguage = data.user.preferLanguage || 'en';
+      setAccessToken(data.token);
+      setUser(data.user);
+
+      if (userLanguage !== i18n.language) {
+        i18n.changeLanguage(userLanguage);
+      }
+
+      toast.success(i18n.t('common.success.signedIn'));
+      router.navigate({ to: '/' });
+    },
+    onError: (error: unknown) => {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create account';
       toast.error(errorMessage);
     },
   });

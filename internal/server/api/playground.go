@@ -1,14 +1,17 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/fx"
 
+	"github.com/looplj/axonhub/internal/authz"
 	"github.com/looplj/axonhub/internal/contexts"
 	"github.com/looplj/axonhub/internal/log"
 	"github.com/looplj/axonhub/internal/objects"
@@ -29,32 +32,39 @@ type PlaygroundResponseError struct {
 	} `json:"error"`
 }
 
+type PlaygroundModel struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type PlaygroundHandlersParams struct {
 	fx.In
 
-	ChannelService  *biz.ChannelService
-	ModelService    *biz.ModelService
-	DefaultSelector *orchestrator.DefaultSelector
-	RequestService  *biz.RequestService
-	SystemService   *biz.SystemService
-	UsageLogService *biz.UsageLogService
-	PromptService   *biz.PromptService
+	ChannelService              *biz.ChannelService
+	ModelService                *biz.ModelService
+	DefaultSelector             *orchestrator.DefaultSelector
+	RequestService              *biz.RequestService
+	SystemService               *biz.SystemService
+	UsageLogService             *biz.UsageLogService
+	PromptService               *biz.PromptService
 	PromptProtectionRuleService *biz.PromptProtectionRuleService
-	QuotaService    *biz.QuotaService
-	HttpClient      *httpclient.HttpClient
-	LiveStreamRegistry *biz.LiveStreamRegistry
+	QuotaService                *biz.QuotaService
+	HttpClient                  *httpclient.HttpClient
+	LiveStreamRegistry          *biz.LiveStreamRegistry
 	ChannelLimiterManager       *orchestrator.ChannelLimiterManager
 	ProviderQuotaStatusProvider orchestrator.ProviderQuotaStatusProvider
 }
 
 type PlaygroundHandlers struct {
 	ChannelService             *biz.ChannelService
+	ModelService               *biz.ModelService
 	ChatCompletionOrchestrator *orchestrator.ChatCompletionOrchestrator
 }
 
 func NewPlaygroundHandlers(params PlaygroundHandlersParams) *PlaygroundHandlers {
 	return &PlaygroundHandlers{
 		ChannelService: params.ChannelService,
+		ModelService:   params.ModelService,
 		ChatCompletionOrchestrator: orchestrator.NewChatCompletionOrchestrator(
 			params.ChannelService,
 			params.DefaultSelector,
@@ -71,6 +81,34 @@ func NewPlaygroundHandlers(params PlaygroundHandlersParams) *PlaygroundHandlers 
 			params.ProviderQuotaStatusProvider,
 		),
 	}
+}
+
+func (handlers *PlaygroundHandlers) Models(c *gin.Context) {
+	models, err := authz.RunWithSystemBypass(c.Request.Context(), "playground-models", func(ctx context.Context) ([]biz.ModelFacade, error) {
+		return handlers.ModelService.ListEnabledModels(ctx)
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": http.StatusText(http.StatusInternalServerError)})
+		return
+	}
+
+	result := make([]PlaygroundModel, 0, len(models))
+	for _, m := range models {
+		name := m.DisplayName
+		if name == "" {
+			name = m.ID
+		}
+		result = append(result, PlaygroundModel{
+			ID:   m.ID,
+			Name: name,
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].ID < result[j].ID
+	})
+
+	c.JSON(http.StatusOK, gin.H{"models": result})
 }
 
 // tryExtractUpstreamErrorMessage attempts to extract a meaningful error message
