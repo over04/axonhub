@@ -10,7 +10,7 @@ import { useMe } from '@/features/auth/data/auth';
  */
 export function usePermissions() {
   const { user: authUser } = useAuthStore((state) => state.auth);
-  const { data: meData } = useMe();
+  const { data: meData, isLoading: isMeLoading } = useMe();
   const selectedProjectId = useSelectedProjectId();
 
   // Use data from me query if available, otherwise fall back to auth store
@@ -182,6 +182,11 @@ export function usePermissions() {
   return {
     user,
     isOwner,
+    // True while the /me query is in flight and no user is resolved yet.
+    // Callers that branch on isOwner can gate on this to avoid a flash of the
+    // wrong view (e.g. an owner briefly rendering the registered-user dashboard
+    // before /me resolves).
+    isIdentityLoading: isMeLoading && !user,
     hasScope,
     hasSystemScope,
     hasProjectScope,

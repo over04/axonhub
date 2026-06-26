@@ -264,12 +264,16 @@ type LoadAPIKeyProfileTemplateInput struct {
 }
 
 type ModelAvailability struct {
-	ModelID      string             `json:"modelId"`
-	DisplayName  string             `json:"displayName"`
-	Available    bool               `json:"available"`
-	SuccessRate  *float64           `json:"successRate,omitempty"`
-	AvgLatencyMs *float64           `json:"avgLatencyMs,omitempty"`
-	Capabilities *ModelCapabilities `json:"capabilities,omitempty"`
+	ModelID         string                  `json:"modelId"`
+	DisplayName     string                  `json:"displayName"`
+	Icon            *string                 `json:"icon,omitempty"`
+	Available       bool                    `json:"available"`
+	SuccessRate     *float64                `json:"successRate,omitempty"`
+	AvgLatencyMs    *float64                `json:"avgLatencyMs,omitempty"`
+	Capabilities    *ModelCapabilities      `json:"capabilities,omitempty"`
+	LatestStatus    string                  `json:"latestStatus"`
+	LatestLatencyMs *float64                `json:"latestLatencyMs,omitempty"`
+	HealthPoints    []*biz.ModelHealthPoint `json:"healthPoints"`
 }
 
 type ModelCapabilities struct {
@@ -314,11 +318,18 @@ type PassThroughSettings struct {
 	Enabled bool `json:"enabled"`
 }
 
+type ProjectDailyUsageStat struct {
+	Date     string `json:"date"`
+	Requests int    `json:"requests"`
+	Tokens   int    `json:"tokens"`
+}
+
 type ProjectUsageOverview struct {
-	TotalRequests int     `json:"totalRequests"`
-	TotalTokens   int     `json:"totalTokens"`
-	SuccessRate   float64 `json:"successRate"`
-	TodayRequests int     `json:"todayRequests"`
+	TotalRequests int                      `json:"totalRequests"`
+	TotalTokens   int                      `json:"totalTokens"`
+	SuccessRate   float64                  `json:"successRate"`
+	TodayRequests int                      `json:"todayRequests"`
+	DailyStats    []*ProjectDailyUsageStat `json:"dailyStats"`
 }
 
 type PromptProtectionRulePreviewInput struct {

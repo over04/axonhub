@@ -4,11 +4,18 @@ import { graphqlRequest } from '@/gql/graphql';
 import { useSelectedProjectId } from '@/stores/projectStore';
 import { useErrorHandler } from '@/hooks/use-error-handler';
 
+export interface ProjectDailyUsageStat {
+  date: string;
+  requests: number;
+  tokens: number;
+}
+
 export interface ProjectUsageOverview {
   totalRequests: number;
   totalTokens: number;
   successRate: number;
   todayRequests: number;
+  dailyStats: ProjectDailyUsageStat[];
 }
 
 const PROJECT_USAGE_OVERVIEW_QUERY = `
@@ -18,13 +25,19 @@ const PROJECT_USAGE_OVERVIEW_QUERY = `
       totalTokens
       successRate
       todayRequests
+      dailyStats {
+        date
+        requests
+        tokens
+      }
     }
   }
 `;
 
-// useProjectUsageOverview fetches usage metrics scoped to the selected project.
-// Registered users see only their own project (X-Project-ID + backend privacy);
-// the query is enabled only when a project is selected.
+// useProjectUsageOverview fetches usage metrics + 30-day daily trend scoped to
+// the selected project. Registered users see only their own project
+// (X-Project-ID + backend ent privacy); the query is enabled only when a
+// project is selected.
 export function useProjectUsageOverview(timeWindow?: string) {
   const { handleError } = useErrorHandler();
   const { t } = useTranslation();

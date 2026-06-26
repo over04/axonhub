@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { graphqlRequest } from '@/gql/graphql';
-import { useSelectedProjectId } from '@/stores/projectStore';
 import { useErrorHandler } from '@/hooks/use-error-handler';
 
 export interface ModelCapabilities {
@@ -10,22 +9,32 @@ export interface ModelCapabilities {
   reasoning?: boolean | null;
 }
 
+export interface ModelHealthPoint {
+  timestamp: number;
+  totalRequests: number;
+  successRequests: number;
+  avgLatencyMs?: number | null;
+}
+
 export interface ModelAvailabilityItem {
   modelId: string;
   displayName: string;
+  icon?: string | null;
   available: boolean;
   successRate?: number | null;
   avgLatencyMs?: number | null;
   capabilities?: ModelCapabilities | null;
+  latestStatus: string;
+  latestLatencyMs?: number | null;
+  healthPoints: ModelHealthPoint[];
 }
 
-export type ModelAvailabilityScope = 'global' | 'project';
-
 const MODEL_AVAILABILITY_QUERY = `
-  query ModelAvailability($scope: String) {
-    modelAvailability(scope: $scope) {
+  query ModelAvailability {
+    modelAvailability {
       modelId
       displayName
+      icon
       available
       successRate
       avgLatencyMs
@@ -34,30 +43,32 @@ const MODEL_AVAILABILITY_QUERY = `
         toolCall
         reasoning
       }
+      latestStatus
+      latestLatencyMs
+      healthPoints {
+        timestamp
+        totalRequests
+        successRequests
+        avgLatencyMs
+      }
     }
   }
 `;
 
-// useModelAvailability fetches sanitized, channel-free model availability.
-// scope='global' aggregates across the whole system; scope='project' aggregates
-// only the caller's own project and requires X-Project-ID so the backend ent
-// privacy layer can scope the Request query to that project.
-export function useModelAvailability(scope: ModelAvailabilityScope = 'global') {
+// useModelAvailability fetches sanitized, channel-free model availability,
+// aggregated globally over a rolling window matching the channel probe
+// settings. Output is model-dimension only (no provider/credential/pricing),
+// so it is safe for all logged-in users.
+export function useModelAvailability() {
   const { handleError } = useErrorHandler();
   const { t } = useTranslation();
-  const projectId = useSelectedProjectId();
 
   return useQuery({
-    queryKey: ['modelAvailability', scope, projectId],
-    enabled: scope !== 'project' || !!projectId,
+    queryKey: ['modelAvailability'],
     queryFn: async () => {
       try {
-        const headers =
-          scope === 'project' && projectId ? { 'X-Project-ID': projectId } : undefined;
         const data = await graphqlRequest<{ modelAvailability: ModelAvailabilityItem[] }>(
-          MODEL_AVAILABILITY_QUERY,
-          { scope },
-          headers
+          MODEL_AVAILABILITY_QUERY
         );
         return data.modelAvailability;
       } catch (error) {

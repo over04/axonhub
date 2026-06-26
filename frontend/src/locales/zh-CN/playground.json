@@ -1,10 +1,6 @@
 {
   "playground.title": "测试场",
   "playground.description": "用于测试 AI 模型的交互式环境。",
-  "playground.modelAvailability.button": "模型可用性",
-  "playground.modelAvailability.title": "模型可用性",
-  "playground.modelAvailability.myUsage": "我的用量",
-  "playground.modelAvailability.global": "全局",
   "playground.settings.modelSource": "测试模式",
   "playground.settings.channel": "渠道",
   "playground.settings.selectChannel": "选择渠道",

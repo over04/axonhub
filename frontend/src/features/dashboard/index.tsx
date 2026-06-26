@@ -25,6 +25,9 @@ import { FastestModelsCard } from './components/fastest-models-card';
 import { ModelPerformanceStats } from './components/model-performance-stats';
 import { ChannelPerformanceStats } from './components/channel-performance-stats';
 import { useDashboardStats } from './data/dashboard';
+import { usePermissions } from '@/hooks/usePermissions';
+import { ProjectUsage } from './components/project-usage';
+import { ModelAvailabilitySection } from './components/model-availability-section';
 
 interface CollapsibleSectionProps {
   title: string;
@@ -89,6 +92,28 @@ function CollapsibleSection({ title, icon, children, storageKey, defaultOpen = f
 }
 
 export default function DashboardPage() {
+  const { isOwner, isIdentityLoading } = usePermissions();
+  // Wait for /me to resolve before branching on isOwner, otherwise an owner
+  // hard-refreshing "/" briefly renders the registered-user ProjectUsage
+  // (isOwner defaults to false) and flashes before correcting.
+  if (isIdentityLoading) {
+    return (
+      <div className='flex-1 space-y-6 p-8 pt-6'>
+        <Header />
+        <Skeleton className='h-[400px]' />
+      </div>
+    );
+  }
+  // 仪表盘按角色区分：注册用户只看个人维度（自己的用量 + 个人模型可用性）；
+  // owner 看全局仪表盘 + 全局模型可用性。
+  if (!isOwner) {
+    return <ProjectUsage />;
+  }
+  return <OwnerDashboard />;
+}
+
+// OwnerDashboard 是管理员（owner）的全局仪表盘。
+function OwnerDashboard() {
   const { t } = useTranslation();
   const { isLoading, error } = useDashboardStats();
   const [modelTotalRequests, setModelTotalRequests] = useState(0);
@@ -179,6 +204,8 @@ export default function DashboardPage() {
           </Card>
         </div>
       </section>
+
+      <ModelAvailabilitySection />
 
       {/* 渠道分析 - 可折叠 */}
       <CollapsibleSection

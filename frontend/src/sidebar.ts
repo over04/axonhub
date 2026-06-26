@@ -10,7 +10,6 @@ import {
   IconDatabase,
   IconAB2,
   IconBaselineDensityMedium,
-  IconChartBar,
   IconAi,
   IconNote,
 } from '@tabler/icons-react';
@@ -65,11 +64,6 @@ export function useSidebarData(): SidebarData {
       title: t('sidebar.groups.admin'),
       items: [
         {
-          title: t('sidebar.items.dashboard'),
-          url: '/',
-          icon: IconLayoutDashboard,
-        } as NavLink,
-        {
           title: t('sidebar.items.projects'),
           url: '/projects',
           icon: IconPackages,
@@ -115,6 +109,11 @@ export function useSidebarData(): SidebarData {
       title: t('sidebar.groups.project'),
       items: [
         {
+          title: t('sidebar.items.dashboard'),
+          url: '/',
+          icon: IconLayoutDashboard,
+        } as NavLink,
+        {
           title: t('sidebar.items.apiKeys'),
           url: '/project/api-keys',
           icon: IconKey,
@@ -128,11 +127,6 @@ export function useSidebarData(): SidebarData {
           title: t('sidebar.items.requests'),
           url: '/project/requests',
           icon: IconActivity,
-        } as NavLink,
-        {
-          title: t('sidebar.items.usage'),
-          url: '/project/usage',
-          icon: IconChartBar,
         } as NavLink,
         // {
         //   title: t('sidebar.items.usageLogs'),

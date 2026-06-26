@@ -14,6 +14,15 @@ type ProjectUsageOverview {
   totalTokens: Int!
   successRate: Float!
   todayRequests: Int!
+  dailyStats: [ProjectDailyUsageStat!]!
+}
+
+# Daily usage breakdown for a project's trend chart (last 30 days). Like
+# DailyRequestStats but project-scoped and cost-free (no pricing exposed).
+type ProjectDailyUsageStat {
+  date: String!
+  requests: Int!
+  tokens: Int!
 }
 
 # Sanitized model capability subset exposed to registered users. Never includes
@@ -24,15 +33,29 @@ type ModelCapabilities {
   reasoning: Boolean
 }
 
-# Channel-free model availability for registered users. Aggregated across the
-# system with no channel/provider/credential information.
+# Channel-free model availability. Aggregated globally over a rolling window
+# matching the channel probe settings (SystemChannelSettings.Probe), with no
+# channel/provider/credential/pricing information.
 type ModelAvailability {
   modelId: String!
   displayName: String!
+  icon: String
   available: Boolean!
   successRate: Float
   avgLatencyMs: Float
   capabilities: ModelCapabilities
+  latestStatus: String!
+  latestLatencyMs: Float
+  healthPoints: [ModelHealthPoint!]!
+}
+
+# One time bucket of a model's availability (matches the channel probe
+# granularity), for the bar chart column.
+type ModelHealthPoint {
+  timestamp: Float!
+  totalRequests: Int!
+  successRequests: Int!
+  avgLatencyMs: Float
 }
 
 type RequestStats {
@@ -242,7 +265,7 @@ type CostStatsByAPIKey {
 extend type Query {
   dashboardOverview: DashboardOverview!
   projectUsageOverview(timeWindow: String): ProjectUsageOverview!
-  modelAvailability(scope: String): [ModelAvailability!]!
+  modelAvailability: [ModelAvailability!]!
   requestStats: RequestStats!
   requestStatsByChannel(timeWindow: String): [RequestStatsByChannel!]!
   requestStatsByModel(timeWindow: String): [RequestStatsByModel!]!

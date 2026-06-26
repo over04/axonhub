@@ -146,11 +146,18 @@ func (r *queryResolver) ProjectUsageOverview(ctx context.Context, timeWindow *st
 	type tokenSum struct {
 		Total int64 `json:"total_tokens"`
 	}
-	var ts tokenSum
+	// ent's Scan after Modify requires a slice, not a single struct. The SUM has
+	// no GROUP BY so it returns one row (COALESCE keeps it non-null even when the
+	// table is empty), or zero rows — handle both.
+	var tokenRecords []tokenSum
 	if err := usageQuery.Modify(func(s *sql.Selector) {
 		s.Select(sql.As(fmt.Sprintf("COALESCE(SUM(%s), 0)", s.C(usagelog.FieldTotalTokens)), "total_tokens"))
-	}).Scan(ctx, &ts); err != nil {
+	}).Scan(ctx, &tokenRecords); err != nil {
 		return nil, fmt.Errorf("failed to sum tokens: %w", err)
+	}
+	totalTokens := int64(0)
+	if len(tokenRecords) > 0 {
+		totalTokens = tokenRecords[0].Total
 	}
 
 	// today's requests in this project. Uses the Request table (not UsageLog) so
@@ -171,11 +178,103 @@ func (r *queryResolver) ProjectUsageOverview(ctx context.Context, timeWindow *st
 		successRate = float64(completed) / float64(totalRequests)
 	}
 
+	// Daily breakdown (last 30 days). Requests come from the Request table —
+	// the same basis as totalRequests/todayRequests above — and tokens from
+	// UsageLog (the only table carrying token counts), merged per day.
+	//
+	// DST alignment: the date bucket is derived with a FIXED offset (the loc
+	// offset at query time) on BOTH the SQL date expression and the Go fill
+	// loop below. Using a single, shared offset keeps the two in lockstep even
+	// across a DST transition — a row lands in the same bucket in SQL and Go,
+	// so no day's data is silently dropped or shifted to a neighbor. (Owner
+	// DailyRequestStats shares this shape; it is out of scope here.)
+	daysCount := 30
+	nowUTC := xtime.UTCNow()
+	_, offsetSeconds := nowUTC.In(loc).Zone()
+	offset := time.Duration(offsetSeconds) * time.Second
+	// Local "today" and start day, defined with the fixed offset so AddDate
+	// (on time.UTC) cannot drift at a DST boundary.
+	nowLocalWall := nowUTC.Add(offset)
+	todayLocal := time.Date(nowLocalWall.Year(), nowLocalWall.Month(), nowLocalWall.Day(), 0, 0, 0, 0, time.UTC)
+	startLocal := todayLocal.AddDate(0, 0, -daysCount+1)
+	startDateUTC := startLocal.Add(-offset)
+
+	// dateExprFor converts a UTC created_at column to a local 'YYYY-MM-DD'
+	// string using the fixed offset, matching the Go fill loop exactly.
+	dateExprFor := func(s *sql.Selector, createdAtCol string) string {
+		switch s.Dialect() {
+		case dialect.SQLite:
+			return fmt.Sprintf("strftime('%%Y-%%m-%%d', datetime(substr(%s, 1, 19), '%+d seconds'))", createdAtCol, offsetSeconds)
+		case dialect.MySQL:
+			offsetStr := xtime.FormatUTCOffset(offsetSeconds)
+			return fmt.Sprintf("DATE_FORMAT(CONVERT_TZ(%s, '+00:00', '%s'), '%%Y-%%m-%%d')", createdAtCol, offsetStr)
+		case dialect.Postgres:
+			return fmt.Sprintf("to_char(%s AT TIME ZONE '%s', 'YYYY-MM-DD')", createdAtCol, loc.String())
+		default:
+			return fmt.Sprintf("DATE(%s)", createdAtCol)
+		}
+	}
+
+	// Requests per day (Request table — same basis as the totals above).
+	type dayCountRow struct {
+		Date  string `json:"date"`
+		Count int    `json:"total_count"`
+	}
+	var reqDayRows []dayCountRow
+	reqDayQuery := r.client.Request.Query().
+		Where(request.CreatedAtGTE(startDateUTC), request.CreatedAtLT(nowUTC))
+	if hasProject {
+		reqDayQuery = reqDayQuery.Where(request.ProjectIDEQ(projectID))
+	}
+	if err := reqDayQuery.Modify(func(s *sql.Selector) {
+		dateExpr := dateExprFor(s, s.C(request.FieldCreatedAt))
+		s.Select(
+			sql.As(dateExpr, "date"),
+			sql.As(sql.Count(s.C(request.FieldID)), "total_count"),
+		).GroupBy(dateExpr).OrderBy("date")
+	}).Scan(ctx, &reqDayRows); err != nil {
+		return nil, fmt.Errorf("failed to get daily request counts: %w", err)
+	}
+	reqMap := lo.SliceToMap(reqDayRows, func(r dayCountRow) (string, int) { return r.Date, r.Count })
+
+	// Tokens per day (UsageLog table — only source of token counts).
+	type dayTokenRow struct {
+		Date   string `json:"date"`
+		Tokens int    `json:"total_tokens"`
+	}
+	var tokenDayRows []dayTokenRow
+	tokenDayQuery := r.client.UsageLog.Query().
+		Where(usagelog.CreatedAtGTE(startDateUTC), usagelog.CreatedAtLT(nowUTC))
+	if hasProject {
+		tokenDayQuery = tokenDayQuery.Where(usagelog.ProjectIDEQ(projectID))
+	}
+	if err := tokenDayQuery.Modify(func(s *sql.Selector) {
+		dateExpr := dateExprFor(s, s.C(usagelog.FieldCreatedAt))
+		s.Select(
+			sql.As(dateExpr, "date"),
+			sql.As(sql.Sum(s.C(usagelog.FieldTotalTokens)), "total_tokens"),
+		).GroupBy(dateExpr).OrderBy("date")
+	}).Scan(ctx, &tokenDayRows); err != nil {
+		return nil, fmt.Errorf("failed to get daily token sums: %w", err)
+	}
+	tokenMap := lo.SliceToMap(tokenDayRows, func(r dayTokenRow) (string, int) { return r.Date, r.Tokens })
+
+	dailyStats := make([]*ProjectDailyUsageStat, 0, daysCount)
+	for i := range daysCount {
+		dateStr := startLocal.AddDate(0, 0, i).Format("2006-01-02")
+		dailyStats = append(dailyStats, &ProjectDailyUsageStat{
+			Date:     dateStr,
+			Requests: reqMap[dateStr],
+			Tokens:   tokenMap[dateStr],
+		})
+	}
+
 	return &ProjectUsageOverview{
 		TotalRequests: totalRequests,
-		TotalTokens:   safeIntFromInt64(ts.Total),
+		TotalTokens:   safeIntFromInt64(totalTokens),
 		SuccessRate:   successRate,
 		TodayRequests: todayRequests,
+		DailyStats:    dailyStats,
 	}, nil
 }
 
@@ -184,17 +283,13 @@ func (r *queryResolver) ProjectUsageOverview(ctx context.Context, timeWindow *st
 // rate, avg latency) for every enabled model. Safe for registered users — the
 // underlying service aggregates under a system bypass and emits model-dimension
 // data only, never channel identity.
-func (r *queryResolver) ModelAvailability(ctx context.Context, scope *string) ([]*ModelAvailability, error) {
+func (r *queryResolver) ModelAvailability(ctx context.Context) ([]*ModelAvailability, error) {
 	// Sanitized, channel-free info safe for any logged-in user. Require a
-	// principal; the service aggregates under a system bypass and emits
-	// model-dimension data only.
+	// principal; the service aggregates globally under a system bypass.
 	if err := authz.RequirePrincipal(ctx); err != nil {
 		return nil, err
 	}
-	// scope == "project" aggregates the caller's own project only (ent privacy
-	// restricts the Request query); any other value (or nil) aggregates globally.
-	projectScoped := scope != nil && *scope == "project"
-	items, err := r.modelService.ListModelAvailability(ctx, projectScoped)
+	items, err := r.modelService.ListModelAvailability(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list model availability: %w", err)
 	}
@@ -208,14 +303,25 @@ func (r *queryResolver) ModelAvailability(ctx context.Context, scope *string) ([
 				Reasoning: lo.ToPtr(item.Capabilities.Reasoning.Supported),
 			}
 		}
+		var icon *string
+		if item.Icon != "" {
+			icon = lo.ToPtr(item.Icon)
+		}
 
 		return &ModelAvailability{
-			ModelID:      item.ModelID,
-			DisplayName:  item.DisplayName,
-			Available:    item.Available,
-			SuccessRate:  item.SuccessRate,
-			AvgLatencyMs: item.AvgLatencyMs,
-			Capabilities: caps,
+			ModelID:         item.ModelID,
+			DisplayName:     item.DisplayName,
+			Icon:            icon,
+			Available:       item.Available,
+			SuccessRate:     item.SuccessRate,
+			AvgLatencyMs:    item.AvgLatencyMs,
+			Capabilities:    caps,
+			LatestStatus:    item.LatestStatus,
+			LatestLatencyMs: item.LatestLatencyMs,
+			HealthPoints: lo.Map(item.HealthPoints, func(p biz.ModelHealthPoint, _ int) *biz.ModelHealthPoint {
+				cp := p
+				return &cp
+			}),
 		}
 	}), nil
 }

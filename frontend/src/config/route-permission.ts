@@ -22,11 +22,6 @@ export const routeConfigs: RouteGroup[] = [
     scopeLevel: 'system', // Admin 路由组只能通过 system-level 权限访问
     routes: [
       {
-        path: '/',
-        requiredScopes: ['read_dashboard'],
-        mode: 'hidden',
-      },
-      {
         path: '/projects',
         requiredScopes: ['read_projects'],
         mode: 'hidden',
@@ -77,6 +72,10 @@ export const routeConfigs: RouteGroup[] = [
     scopeLevel: 'any', // Project 路由组可以通过 system-level 或 project-level 权限访问
     routes: [
       {
+        // 仪表盘对所有登录用户可见；组件按 isOwner 区分全局/个人视图
+        path: '/',
+      },
+      {
         path: '/project/api-keys',
         requiredScopes: ['read_api_keys'],
         mode: 'hidden',
@@ -89,12 +88,8 @@ export const routeConfigs: RouteGroup[] = [
       {
         path: '/project/requests',
         requiredScopes: ['read_requests'],
-        scopeLevel: 'system', // 请求内容对非 owner 全屏蔽（owner 门控），隐藏入口避免空内容页
-        mode: 'hidden',
-      },
-      {
-        path: '/project/usage',
-        requiredScopes: ['read_requests'],
+        // 注册用户可见请求列表（元数据：时间/状态/model/tokens）；详情的
+        // body/response/headers 由 CanViewRequestContent 门控（非 owner 看不到）。
         mode: 'hidden',
       },
       {
