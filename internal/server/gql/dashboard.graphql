@@ -7,6 +7,34 @@ type DashboardOverview {
   averageResponseTime: Float
 }
 
+# Project-scoped usage overview for registered users (non-owner). Enforced by
+# ent privacy: only the caller's own project is visible (owner sees all).
+type ProjectUsageOverview {
+  totalRequests: Int!
+  totalTokens: Int!
+  successRate: Float!
+  todayRequests: Int!
+}
+
+# Sanitized model capability subset exposed to registered users. Never includes
+# pricing (Cost) or any channel identity.
+type ModelCapabilities {
+  vision: Boolean
+  toolCall: Boolean
+  reasoning: Boolean
+}
+
+# Channel-free model availability for registered users. Aggregated across the
+# system with no channel/provider/credential information.
+type ModelAvailability {
+  modelId: String!
+  displayName: String!
+  available: Boolean!
+  successRate: Float
+  avgLatencyMs: Float
+  capabilities: ModelCapabilities
+}
+
 type RequestStats {
   requestsToday: Int!
   requestsThisWeek: Int!
@@ -213,6 +241,8 @@ type CostStatsByAPIKey {
 
 extend type Query {
   dashboardOverview: DashboardOverview!
+  projectUsageOverview(timeWindow: String): ProjectUsageOverview!
+  modelAvailability(scope: String): [ModelAvailability!]!
   requestStats: RequestStats!
   requestStatsByChannel(timeWindow: String): [RequestStatsByChannel!]!
   requestStatsByModel(timeWindow: String): [RequestStatsByModel!]!

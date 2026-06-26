@@ -9,6 +9,7 @@ import (
 	"entgo.io/ent/schema/index"
 
 	"github.com/looplj/axonhub/internal/objects"
+	"github.com/looplj/axonhub/internal/scopes"
 )
 
 type RequestExecution struct {
@@ -81,7 +82,10 @@ func (RequestExecution) Fields() []ent.Field {
 		// Request headers
 		field.JSON("request_headers", objects.JSONRawMessage{}).
 			Optional().
-			Comment("Request headers"),
+			Comment("Request headers").
+			Annotations(
+				entgql.Directives(forceResolver()),
+			),
 	}
 }
 
@@ -112,5 +116,24 @@ func (RequestExecution) Edges() []ent.Edge {
 func (RequestExecution) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entgql.RelayConnection(),
+	}
+}
+
+// Policy defines the permission policies for RequestExecution, mirroring
+// Request: project-scoped read_requests/write_requests, owner bypass.
+func (RequestExecution) Policy() ent.Policy {
+	return scopes.Policy{
+		Query: scopes.QueryPolicy{
+			scopes.APIKeyScopeQueryRule(scopes.ScopeWriteRequests),
+			scopes.UserProjectScopeReadRule(scopes.ScopeReadRequests),
+			scopes.OwnerRule(),
+			scopes.UserReadScopeRule(scopes.ScopeReadRequests),
+		},
+		Mutation: scopes.MutationPolicy{
+			scopes.APIKeyScopeMutationRule(scopes.ScopeWriteRequests),
+			scopes.UserProjectScopeWriteRule(scopes.ScopeWriteRequests),
+			scopes.OwnerRule(),
+			scopes.UserWriteScopeRule(scopes.ScopeWriteRequests),
+		},
 	}
 }

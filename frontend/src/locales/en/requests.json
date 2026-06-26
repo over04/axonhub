@@ -72,6 +72,7 @@
   "requests.detail.tabs.preview": "Preview",
   "requests.detail.tabs.json": "Raw JSON",
   "requests.detail.noResponse": "No response data",
+  "requests.detail.noPermissionContent": "You do not have permission to view request content.",
   "requests.detail.audioNotSupported": "Your browser does not support audio playback.",
   "requests.detail.audioNotStored": "Audio is not stored. Configure external storage to enable playback.",
   "requests.detail.audioLoadFailed": "Failed to load audio. Check storage configuration or use the download button.",

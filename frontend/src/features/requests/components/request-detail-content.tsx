@@ -46,7 +46,16 @@ export function RequestDetailContent({ requestId, projectId, previewRequest, isP
   const [audioLoadFailed, setAudioLoadFailed] = useState(false);
   const [responseView, setResponseView] = useState<'preview' | 'json'>('preview');
 
-  const { hasSystemScope } = usePermissions();
+  const { hasSystemScope, isOwner } = usePermissions();
+
+  const noPermissionNotice = (
+    <div className='bg-muted/20 flex h-[300px] w-full items-center justify-center rounded-lg border p-6'>
+      <div className='space-y-3 text-center'>
+        <FileText className='text-muted-foreground mx-auto h-12 w-12' />
+        <p className='text-muted-foreground text-base'>{t('requests.detail.noPermissionContent')}</p>
+      </div>
+    </div>
+  );
   const { data: settings } = useGeneralSettings(hasSystemScope('read_settings'));
   const { data: requestData, isLoading } = useRequest(requestId, { projectId, disableAutoRefresh: isPreviewStreaming });
   const request = previewRequest ?? requestData;
@@ -487,6 +496,7 @@ export function RequestDetailContent({ requestId, projectId, previewRequest, isP
 
       <Card className='border-0 shadow-sm'>
         <CardContent className='p-0'>
+          {isOwner ? (
           <Tabs defaultValue='request' className='w-full'>
             <div className='bg-muted/20 border-b px-6 pt-6'>
               <TabsList className='bg-background grid w-full grid-cols-3'>
@@ -908,6 +918,9 @@ export function RequestDetailContent({ requestId, projectId, previewRequest, isP
               )}
             </TabsContent>
           </Tabs>
+          ) : (
+            noPermissionNotice
+          )}
         </CardContent>
       </Card>
 

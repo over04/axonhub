@@ -15,6 +15,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/looplj/axonhub/internal/authz"
+	"github.com/looplj/axonhub/internal/contexts"
 	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/ent/apikey"
 	"github.com/looplj/axonhub/internal/ent/channel"
@@ -27,6 +28,7 @@ import (
 	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/internal/pkg/xtime"
 	"github.com/looplj/axonhub/internal/scopes"
+	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/looplj/axonhub/internal/server/gql/qb"
 	"github.com/samber/lo"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -82,6 +84,140 @@ func (r *queryResolver) DashboardOverview(ctx context.Context) (*DashboardOvervi
 	// This would require additional database schema changes to store response times
 
 	return stats, nil
+}
+
+// ProjectUsageOverview returns usage metrics scoped to the caller's project.
+// Access is enforced two ways: (1) ent privacy on Request/UsageLog via
+// UserProjectScopeReadRule(read_requests) validates the caller belongs to the
+// project in context; (2) we filter explicitly by projectID. Registered users
+// thus only ever see their own project; owner (no projectID in context) sees
+// all. No RequireScope is used because it ignores project-level scopes.
+func (r *queryResolver) ProjectUsageOverview(ctx context.Context, timeWindow *string) (*ProjectUsageOverview, error) {
+	// Registered users reach this resolver; a system-level RequireScope would
+	// block them (they hold project-level, not system-level, scopes). RequirePrincipal
+	// guarantees a logged-in caller; per-project isolation is enforced by ent privacy.
+	if err := authz.RequirePrincipal(ctx); err != nil {
+		return nil, err
+	}
+	user, _ := contexts.GetUser(ctx)
+	isOwner := user != nil && user.IsOwner
+
+	projectID, hasProject := contexts.GetProjectID(ctx)
+	if !isOwner && !hasProject {
+		return nil, fmt.Errorf("project id is required")
+	}
+
+	since, applyFilter := r.parseTimeWindow(ctx, timeWindow)
+
+	// total requests in window
+	reqQuery := r.client.Request.Query()
+	if hasProject {
+		reqQuery = reqQuery.Where(request.ProjectIDEQ(projectID))
+	}
+	if applyFilter {
+		reqQuery = reqQuery.Where(request.CreatedAtGTE(since))
+	}
+	totalRequests, err := reqQuery.Count(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count requests: %w", err)
+	}
+
+	// completed requests in window (for success rate)
+	completedQuery := r.client.Request.Query().Where(request.StatusEQ(request.StatusCompleted))
+	if hasProject {
+		completedQuery = completedQuery.Where(request.ProjectIDEQ(projectID))
+	}
+	if applyFilter {
+		completedQuery = completedQuery.Where(request.CreatedAtGTE(since))
+	}
+	completed, err := completedQuery.Count(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count completed requests: %w", err)
+	}
+
+	// total tokens in window
+	usageQuery := r.client.UsageLog.Query()
+	if hasProject {
+		usageQuery = usageQuery.Where(usagelog.ProjectIDEQ(projectID))
+	}
+	if applyFilter {
+		usageQuery = usageQuery.Where(usagelog.CreatedAtGTE(since))
+	}
+	type tokenSum struct {
+		Total int64 `json:"total_tokens"`
+	}
+	var ts tokenSum
+	if err := usageQuery.Modify(func(s *sql.Selector) {
+		s.Select(sql.As(fmt.Sprintf("COALESCE(SUM(%s), 0)", s.C(usagelog.FieldTotalTokens)), "total_tokens"))
+	}).Scan(ctx, &ts); err != nil {
+		return nil, fmt.Errorf("failed to sum tokens: %w", err)
+	}
+
+	// today's requests in this project. Uses the Request table (not UsageLog) so
+	// totalRequests / todayRequests / successRate share one consistent basis.
+	loc := r.systemService.TimeLocation(ctx)
+	period := xtime.GetCalendarPeriods(loc)
+	todayQuery := r.client.Request.Query().Where(request.CreatedAtGTE(period.Today.Start))
+	if hasProject {
+		todayQuery = todayQuery.Where(request.ProjectIDEQ(projectID))
+	}
+	todayRequests, err := todayQuery.Count(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count today requests: %w", err)
+	}
+
+	successRate := 0.0
+	if totalRequests > 0 {
+		successRate = float64(completed) / float64(totalRequests)
+	}
+
+	return &ProjectUsageOverview{
+		TotalRequests: totalRequests,
+		TotalTokens:   safeIntFromInt64(ts.Total),
+		SuccessRate:   successRate,
+		TodayRequests: todayRequests,
+	}, nil
+}
+
+// ModelAvailability is the resolver for the modelAvailability field.
+// Returns sanitized, channel-free availability info (capabilities, success
+// rate, avg latency) for every enabled model. Safe for registered users — the
+// underlying service aggregates under a system bypass and emits model-dimension
+// data only, never channel identity.
+func (r *queryResolver) ModelAvailability(ctx context.Context, scope *string) ([]*ModelAvailability, error) {
+	// Sanitized, channel-free info safe for any logged-in user. Require a
+	// principal; the service aggregates under a system bypass and emits
+	// model-dimension data only.
+	if err := authz.RequirePrincipal(ctx); err != nil {
+		return nil, err
+	}
+	// scope == "project" aggregates the caller's own project only (ent privacy
+	// restricts the Request query); any other value (or nil) aggregates globally.
+	projectScoped := scope != nil && *scope == "project"
+	items, err := r.modelService.ListModelAvailability(ctx, projectScoped)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list model availability: %w", err)
+	}
+
+	return lo.Map(items, func(item *biz.ModelAvailabilityInfo, _ int) *ModelAvailability {
+		var caps *ModelCapabilities
+		if item.Capabilities != nil {
+			caps = &ModelCapabilities{
+				Vision:    lo.ToPtr(item.Capabilities.Vision),
+				ToolCall:  lo.ToPtr(item.Capabilities.ToolCall),
+				Reasoning: lo.ToPtr(item.Capabilities.Reasoning.Supported),
+			}
+		}
+
+		return &ModelAvailability{
+			ModelID:      item.ModelID,
+			DisplayName:  item.DisplayName,
+			Available:    item.Available,
+			SuccessRate:  item.SuccessRate,
+			AvgLatencyMs: item.AvgLatencyMs,
+			Capabilities: caps,
+		}
+	}), nil
 }
 
 // RequestStats is the resolver for the requestStats field.
@@ -421,9 +557,13 @@ func (r *queryResolver) TokenStatsByAPIKey(ctx context.Context, timeWindow *stri
 // APIKeyTokenUsageStats is the resolver for the apiKeyTokenUsageStats field.
 // Aggregates input, output, and cached tokens per API key for the selected time range.
 func (r *queryResolver) APIKeyTokenUsageStats(ctx context.Context, input *APIKeyTokenUsageStatsInput) ([]*APIKeyTokenUsageStats, error) {
-	if err := authz.RequireScope(ctx, scopes.ScopeReadAPIKeys); err != nil {
-		return nil, err
-	}
+	// Access is enforced by ent privacy on UsageLog (UserProjectScopeReadRule with
+	// read_requests, plus OwnerRule). RequireScope is intentionally NOT used here:
+	// it only recognizes system-level scopes, which would block registered users
+	// who legitimately hold project-level read_api_keys/read_requests on their own
+	// project. Privacy scopes the underlying query to the caller's project
+	// (requires X-Project-ID in context), so only the caller's own API keys are
+	// aggregated; owner is allowed in full by OwnerRule.
 
 	// Require at least one API key ID to prevent unbounded queries
 	if input == nil || len(input.APIKeyIds) == 0 {

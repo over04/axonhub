@@ -67,7 +67,10 @@ func (Request) Fields() []ent.Field {
 		// Request headers
 		field.JSON("request_headers", objects.JSONRawMessage{}).
 			Optional().
-			Comment("Request headers"),
+			Comment("Request headers").
+			Annotations(
+				entgql.Directives(forceResolver()),
+			),
 		// The original request from the user.
 		// e.g: the user request via OpenAI request format, but the actual request to the provider with Claude format, the request_body is the OpenAI request format.
 		field.JSON("request_body", objects.JSONRawMessage{}).

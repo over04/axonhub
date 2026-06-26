@@ -72,6 +72,7 @@
   "requests.detail.tabs.preview": "内容预览",
   "requests.detail.tabs.json": "JSON 原文",
   "requests.detail.noResponse": "暂无响应数据",
+  "requests.detail.noPermissionContent": "您没有权限查看请求内容。",
   "requests.detail.audioNotSupported": "您的浏览器不支持音频播放。",
   "requests.detail.audioNotStored": "音频未被存储。配置外部存储后可在此试听。",
   "requests.detail.audioLoadFailed": "音频加载失败。请检查存储配置，或使用下载按钮重试。",

@@ -4189,7 +4189,7 @@ type Request implements Node {
   """
   Request headers
   """
-  requestHeaders: JSONRawMessage
+  requestHeaders: JSONRawMessage @goField(forceResolver: true)
   requestBody: JSONRawMessage! @goField(forceResolver: true)
   responseBody: JSONRawMessage @goField(forceResolver: true)
   responseChunks: [JSONRawMessage!] @goField(forceResolver: true)
@@ -4351,7 +4351,7 @@ type RequestExecution implements Node {
   """
   Request headers
   """
-  requestHeaders: JSONRawMessage
+  requestHeaders: JSONRawMessage @goField(forceResolver: true)
   request: Request!
   channel: Channel @goField(forceResolver: true)
   dataStorage: DataStorage

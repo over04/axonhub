@@ -13,6 +13,8 @@ import (
 	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/log"
 	"github.com/looplj/axonhub/internal/objects"
+	"github.com/looplj/axonhub/internal/pkg/xjson"
+	"github.com/looplj/axonhub/internal/server/biz"
 )
 
 // ID is the resolver for the id field.
@@ -514,6 +516,19 @@ func (r *requestResolver) DataStorageID(ctx context.Context, obj *ent.Request) (
 	}, nil
 }
 
+// RequestHeaders is the resolver for the requestHeaders field.
+func (r *requestResolver) RequestHeaders(ctx context.Context, obj *ent.Request) (objects.JSONRawMessage, error) {
+	if !biz.CanViewRequestContent(ctx) {
+		return xjson.EmptyJSONRawMessage, nil
+	}
+
+	if obj.RequestHeaders == nil {
+		return xjson.EmptyJSONRawMessage, nil
+	}
+
+	return obj.RequestHeaders, nil
+}
+
 // RequestBody is the resolver for the requestBody field.
 func (r *requestResolver) RequestBody(ctx context.Context, obj *ent.Request) (objects.JSONRawMessage, error) {
 	value, err := r.requestService.LoadRequestBody(ctx, obj)
@@ -643,6 +658,19 @@ func (r *requestExecutionResolver) ResponseChunks(ctx context.Context, obj *ent.
 	}
 
 	return value, nil
+}
+
+// RequestHeaders is the resolver for the requestHeaders field.
+func (r *requestExecutionResolver) RequestHeaders(ctx context.Context, obj *ent.RequestExecution) (objects.JSONRawMessage, error) {
+	if !biz.CanViewRequestContent(ctx) {
+		return xjson.EmptyJSONRawMessage, nil
+	}
+
+	if obj.RequestHeaders == nil {
+		return xjson.EmptyJSONRawMessage, nil
+	}
+
+	return obj.RequestHeaders, nil
 }
 
 // Channel is the resolver for the channel field.

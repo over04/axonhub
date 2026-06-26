@@ -263,6 +263,21 @@ type LoadAPIKeyProfileTemplateInput struct {
 	APIKeyID   objects.GUID `json:"apiKeyID"`
 }
 
+type ModelAvailability struct {
+	ModelID      string             `json:"modelId"`
+	DisplayName  string             `json:"displayName"`
+	Available    bool               `json:"available"`
+	SuccessRate  *float64           `json:"successRate,omitempty"`
+	AvgLatencyMs *float64           `json:"avgLatencyMs,omitempty"`
+	Capabilities *ModelCapabilities `json:"capabilities,omitempty"`
+}
+
+type ModelCapabilities struct {
+	Vision    *bool `json:"vision,omitempty"`
+	ToolCall  *bool `json:"toolCall,omitempty"`
+	Reasoning *bool `json:"reasoning,omitempty"`
+}
+
 // Performance statistics for a specific model on a given date
 type ModelPerformanceStat struct {
 	Date         string   `json:"date"`
@@ -297,6 +312,13 @@ type OnboardingInfo struct {
 
 type PassThroughSettings struct {
 	Enabled bool `json:"enabled"`
+}
+
+type ProjectUsageOverview struct {
+	TotalRequests int     `json:"totalRequests"`
+	TotalTokens   int     `json:"totalTokens"`
+	SuccessRate   float64 `json:"successRate"`
+	TodayRequests int     `json:"todayRequests"`
 }
 
 type PromptProtectionRulePreviewInput struct {

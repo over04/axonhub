@@ -720,6 +720,21 @@ type ComplexityRoot struct {
 		Enabled   func(childComplexity int) int
 	}
 
+	ModelAvailability struct {
+		Available    func(childComplexity int) int
+		AvgLatencyMs func(childComplexity int) int
+		Capabilities func(childComplexity int) int
+		DisplayName  func(childComplexity int) int
+		ModelID      func(childComplexity int) int
+		SuccessRate  func(childComplexity int) int
+	}
+
+	ModelCapabilities struct {
+		Reasoning func(childComplexity int) int
+		ToolCall  func(childComplexity int) int
+		Vision    func(childComplexity int) int
+	}
+
 	ModelCard struct {
 		Cost        func(childComplexity int) int
 		Knowledge   func(childComplexity int) int
@@ -1045,6 +1060,13 @@ type ComplexityRoot struct {
 		Profiles      func(childComplexity int) int
 	}
 
+	ProjectUsageOverview struct {
+		SuccessRate   func(childComplexity int) int
+		TodayRequests func(childComplexity int) int
+		TotalRequests func(childComplexity int) int
+		TotalTokens   func(childComplexity int) int
+	}
+
 	Prompt struct {
 		Content     func(childComplexity int) int
 		CreatedAt   func(childComplexity int) int
@@ -1191,6 +1213,7 @@ type ComplexityRoot struct {
 		FetchModels                  func(childComplexity int, input biz.FetchModelsInput) int
 		GetCacheDiagnostics          func(childComplexity int, input *GetCacheDiagnosticsInput) int
 		Me                           func(childComplexity int) int
+		ModelAvailability            func(childComplexity int, scope *string) int
 		ModelPerformanceStats        func(childComplexity int) int
 		Models                       func(childComplexity int, after *entgql.Cursor[int], first *int, before *entgql.Cursor[int], last *int, orderBy *ent.ModelOrder, where *ent.ModelWhereInput) int
 		MyProjects                   func(childComplexity int) int
@@ -1200,6 +1223,7 @@ type ComplexityRoot struct {
 		OnboardingInfo               func(childComplexity int) int
 		PassThroughSettings          func(childComplexity int) int
 		PreviewGcCleanup             func(childComplexity int, input gc.TriggerGcCleanupInput) int
+		ProjectUsageOverview         func(childComplexity int, timeWindow *string) int
 		Projects                     func(childComplexity int, after *entgql.Cursor[int], first *int, before *entgql.Cursor[int], last *int, orderBy *ent.ProjectOrder, where *ent.ProjectWhereInput) int
 		PromptProtectionRules        func(childComplexity int, after *entgql.Cursor[int], first *int, before *entgql.Cursor[int], last *int, orderBy *ent.PromptProtectionRuleOrder, where *ent.PromptProtectionRuleWhereInput) int
 		Prompts                      func(childComplexity int, after *entgql.Cursor[int], first *int, before *entgql.Cursor[int], last *int, orderBy *ent.PromptOrder, where *ent.PromptWhereInput) int
@@ -2110,6 +2134,8 @@ type QueryResolver interface {
 	QueryChannels(ctx context.Context, input biz.QueryChannelsInput) (*ent.ChannelConnection, error)
 	APIKeyQuotaUsages(ctx context.Context, apiKeyID objects.GUID) ([]*APIKeyProfileQuotaUsage, error)
 	DashboardOverview(ctx context.Context) (*DashboardOverview, error)
+	ProjectUsageOverview(ctx context.Context, timeWindow *string) (*ProjectUsageOverview, error)
+	ModelAvailability(ctx context.Context, scope *string) ([]*ModelAvailability, error)
 	RequestStats(ctx context.Context) (*RequestStats, error)
 	RequestStatsByChannel(ctx context.Context, timeWindow *string) ([]*RequestStatsByChannel, error)
 	RequestStatsByModel(ctx context.Context, timeWindow *string) ([]*RequestStatsByModel, error)
@@ -2168,6 +2194,7 @@ type RequestResolver interface {
 	TraceID(ctx context.Context, obj *ent.Request) (*objects.GUID, error)
 	DataStorageID(ctx context.Context, obj *ent.Request) (*objects.GUID, error)
 
+	RequestHeaders(ctx context.Context, obj *ent.Request) (objects.JSONRawMessage, error)
 	RequestBody(ctx context.Context, obj *ent.Request) (objects.JSONRawMessage, error)
 	ResponseBody(ctx context.Context, obj *ent.Request) (objects.JSONRawMessage, error)
 	ResponseChunks(ctx context.Context, obj *ent.Request) ([]objects.JSONRawMessage, error)
@@ -2185,6 +2212,8 @@ type RequestExecutionResolver interface {
 	RequestBody(ctx context.Context, obj *ent.RequestExecution) (objects.JSONRawMessage, error)
 	ResponseBody(ctx context.Context, obj *ent.RequestExecution) (objects.JSONRawMessage, error)
 	ResponseChunks(ctx context.Context, obj *ent.RequestExecution) ([]objects.JSONRawMessage, error)
+
+	RequestHeaders(ctx context.Context, obj *ent.RequestExecution) (objects.JSONRawMessage, error)
 
 	Channel(ctx context.Context, obj *ent.RequestExecution) (*ent.Channel, error)
 }
@@ -4613,6 +4642,62 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.ModelAssociationWhen.Enabled(childComplexity), true
 
+	case "ModelAvailability.available":
+		if e.complexity.ModelAvailability.Available == nil {
+			break
+		}
+
+		return e.complexity.ModelAvailability.Available(childComplexity), true
+	case "ModelAvailability.avgLatencyMs":
+		if e.complexity.ModelAvailability.AvgLatencyMs == nil {
+			break
+		}
+
+		return e.complexity.ModelAvailability.AvgLatencyMs(childComplexity), true
+	case "ModelAvailability.capabilities":
+		if e.complexity.ModelAvailability.Capabilities == nil {
+			break
+		}
+
+		return e.complexity.ModelAvailability.Capabilities(childComplexity), true
+	case "ModelAvailability.displayName":
+		if e.complexity.ModelAvailability.DisplayName == nil {
+			break
+		}
+
+		return e.complexity.ModelAvailability.DisplayName(childComplexity), true
+	case "ModelAvailability.modelId":
+		if e.complexity.ModelAvailability.ModelID == nil {
+			break
+		}
+
+		return e.complexity.ModelAvailability.ModelID(childComplexity), true
+	case "ModelAvailability.successRate":
+		if e.complexity.ModelAvailability.SuccessRate == nil {
+			break
+		}
+
+		return e.complexity.ModelAvailability.SuccessRate(childComplexity), true
+
+	case "ModelCapabilities.reasoning":
+		if e.complexity.ModelCapabilities.Reasoning == nil {
+			break
+		}
+
+		return e.complexity.ModelCapabilities.Reasoning(childComplexity), true
+	case "ModelCapabilities.toolCall":
+		if e.complexity.ModelCapabilities.ToolCall == nil {
+			break
+		}
+
+		return e.complexity.ModelCapabilities.ToolCall(childComplexity), true
+	case "ModelCapabilities.vision":
+		if e.complexity.ModelCapabilities.Vision == nil {
+			break
+		}
+
+		return e.complexity.ModelCapabilities.Vision(childComplexity), true
+
 	case "ModelCard.cost":
 		if e.complexity.ModelCard.Cost == nil {
 			break
@@ -6567,6 +6652,31 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.ProjectProfiles.Profiles(childComplexity), true
 
+	case "ProjectUsageOverview.successRate":
+		if e.complexity.ProjectUsageOverview.SuccessRate == nil {
+			break
+		}
+
+		return e.complexity.ProjectUsageOverview.SuccessRate(childComplexity), true
+	case "ProjectUsageOverview.todayRequests":
+		if e.complexity.ProjectUsageOverview.TodayRequests == nil {
+			break
+		}
+
+		return e.complexity.ProjectUsageOverview.TodayRequests(childComplexity), true
+	case "ProjectUsageOverview.totalRequests":
+		if e.complexity.ProjectUsageOverview.TotalRequests == nil {
+			break
+		}
+
+		return e.complexity.ProjectUsageOverview.TotalRequests(childComplexity), true
+	case "ProjectUsageOverview.totalTokens":
+		if e.complexity.ProjectUsageOverview.TotalTokens == nil {
+			break
+		}
+
+		return e.complexity.ProjectUsageOverview.TotalTokens(childComplexity), true
+
 	case "Prompt.content":
 		if e.complexity.Prompt.Content == nil {
 			break
@@ -7243,6 +7353,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.Me(childComplexity), true
+	case "Query.modelAvailability":
+		if e.complexity.Query.ModelAvailability == nil {
+			break
+		}
+
+		args, err := ec.field_Query_modelAvailability_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.ModelAvailability(childComplexity, args["scope"].(*string)), true
 	case "Query.modelPerformanceStats":
 		if e.complexity.Query.ModelPerformanceStats == nil {
 			break
@@ -7322,6 +7443,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.PreviewGcCleanup(childComplexity, args["input"].(gc.TriggerGcCleanupInput)), true
+	case "Query.projectUsageOverview":
+		if e.complexity.Query.ProjectUsageOverview == nil {
+			break
+		}
+
+		args, err := ec.field_Query_projectUsageOverview_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.ProjectUsageOverview(childComplexity, args["timeWindow"].(*string)), true
 	case "Query.projects":
 		if e.complexity.Query.Projects == nil {
 			break
@@ -12762,6 +12894,17 @@ func (ec *executionContext) field_Query_getCacheDiagnostics_args(ctx context.Con
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_modelAvailability_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "scope", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["scope"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_models_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -12864,6 +13007,17 @@ func (ec *executionContext) field_Query_previewGcCleanup_args(ctx context.Contex
 		return nil, err
 	}
 	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_projectUsageOverview_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "timeWindow", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["timeWindow"] = arg0
 	return args, nil
 }
 
@@ -25837,6 +25991,275 @@ func (ec *executionContext) fieldContext_ModelAssociationWhen_condition(_ contex
 	return fc, nil
 }
 
+func (ec *executionContext) _ModelAvailability_modelId(ctx context.Context, field graphql.CollectedField, obj *ModelAvailability) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelAvailability_modelId,
+		func(ctx context.Context) (any, error) {
+			return obj.ModelID, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelAvailability_modelId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelAvailability",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelAvailability_displayName(ctx context.Context, field graphql.CollectedField, obj *ModelAvailability) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelAvailability_displayName,
+		func(ctx context.Context) (any, error) {
+			return obj.DisplayName, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelAvailability_displayName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelAvailability",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelAvailability_available(ctx context.Context, field graphql.CollectedField, obj *ModelAvailability) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelAvailability_available,
+		func(ctx context.Context) (any, error) {
+			return obj.Available, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelAvailability_available(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelAvailability",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelAvailability_successRate(ctx context.Context, field graphql.CollectedField, obj *ModelAvailability) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelAvailability_successRate,
+		func(ctx context.Context) (any, error) {
+			return obj.SuccessRate, nil
+		},
+		nil,
+		ec.marshalOFloat2ᚖfloat64,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelAvailability_successRate(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelAvailability",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelAvailability_avgLatencyMs(ctx context.Context, field graphql.CollectedField, obj *ModelAvailability) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelAvailability_avgLatencyMs,
+		func(ctx context.Context) (any, error) {
+			return obj.AvgLatencyMs, nil
+		},
+		nil,
+		ec.marshalOFloat2ᚖfloat64,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelAvailability_avgLatencyMs(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelAvailability",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelAvailability_capabilities(ctx context.Context, field graphql.CollectedField, obj *ModelAvailability) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelAvailability_capabilities,
+		func(ctx context.Context) (any, error) {
+			return obj.Capabilities, nil
+		},
+		nil,
+		ec.marshalOModelCapabilities2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐModelCapabilities,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelAvailability_capabilities(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelAvailability",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "vision":
+				return ec.fieldContext_ModelCapabilities_vision(ctx, field)
+			case "toolCall":
+				return ec.fieldContext_ModelCapabilities_toolCall(ctx, field)
+			case "reasoning":
+				return ec.fieldContext_ModelCapabilities_reasoning(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ModelCapabilities", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelCapabilities_vision(ctx context.Context, field graphql.CollectedField, obj *ModelCapabilities) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelCapabilities_vision,
+		func(ctx context.Context) (any, error) {
+			return obj.Vision, nil
+		},
+		nil,
+		ec.marshalOBoolean2ᚖbool,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelCapabilities_vision(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelCapabilities",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelCapabilities_toolCall(ctx context.Context, field graphql.CollectedField, obj *ModelCapabilities) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelCapabilities_toolCall,
+		func(ctx context.Context) (any, error) {
+			return obj.ToolCall, nil
+		},
+		nil,
+		ec.marshalOBoolean2ᚖbool,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelCapabilities_toolCall(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelCapabilities",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ModelCapabilities_reasoning(ctx context.Context, field graphql.CollectedField, obj *ModelCapabilities) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ModelCapabilities_reasoning,
+		func(ctx context.Context) (any, error) {
+			return obj.Reasoning, nil
+		},
+		nil,
+		ec.marshalOBoolean2ᚖbool,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_ModelCapabilities_reasoning(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ModelCapabilities",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _ModelCard_reasoning(ctx context.Context, field graphql.CollectedField, obj *objects.ModelCard) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -35507,6 +35930,122 @@ func (ec *executionContext) fieldContext_ProjectProfiles_profiles(_ context.Cont
 	return fc, nil
 }
 
+func (ec *executionContext) _ProjectUsageOverview_totalRequests(ctx context.Context, field graphql.CollectedField, obj *ProjectUsageOverview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ProjectUsageOverview_totalRequests,
+		func(ctx context.Context) (any, error) {
+			return obj.TotalRequests, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ProjectUsageOverview_totalRequests(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ProjectUsageOverview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ProjectUsageOverview_totalTokens(ctx context.Context, field graphql.CollectedField, obj *ProjectUsageOverview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ProjectUsageOverview_totalTokens,
+		func(ctx context.Context) (any, error) {
+			return obj.TotalTokens, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ProjectUsageOverview_totalTokens(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ProjectUsageOverview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ProjectUsageOverview_successRate(ctx context.Context, field graphql.CollectedField, obj *ProjectUsageOverview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ProjectUsageOverview_successRate,
+		func(ctx context.Context) (any, error) {
+			return obj.SuccessRate, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ProjectUsageOverview_successRate(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ProjectUsageOverview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ProjectUsageOverview_todayRequests(ctx context.Context, field graphql.CollectedField, obj *ProjectUsageOverview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ProjectUsageOverview_todayRequests,
+		func(ctx context.Context) (any, error) {
+			return obj.TodayRequests, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ProjectUsageOverview_todayRequests(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ProjectUsageOverview",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Prompt_id(ctx context.Context, field graphql.CollectedField, obj *ent.Prompt) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -38834,6 +39373,112 @@ func (ec *executionContext) fieldContext_Query_dashboardOverview(_ context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_projectUsageOverview(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_projectUsageOverview,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().ProjectUsageOverview(ctx, fc.Args["timeWindow"].(*string))
+		},
+		nil,
+		ec.marshalNProjectUsageOverview2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐProjectUsageOverview,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_projectUsageOverview(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "totalRequests":
+				return ec.fieldContext_ProjectUsageOverview_totalRequests(ctx, field)
+			case "totalTokens":
+				return ec.fieldContext_ProjectUsageOverview_totalTokens(ctx, field)
+			case "successRate":
+				return ec.fieldContext_ProjectUsageOverview_successRate(ctx, field)
+			case "todayRequests":
+				return ec.fieldContext_ProjectUsageOverview_todayRequests(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ProjectUsageOverview", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_projectUsageOverview_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_modelAvailability(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_modelAvailability,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().ModelAvailability(ctx, fc.Args["scope"].(*string))
+		},
+		nil,
+		ec.marshalNModelAvailability2ᚕᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐModelAvailabilityᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_modelAvailability(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "modelId":
+				return ec.fieldContext_ModelAvailability_modelId(ctx, field)
+			case "displayName":
+				return ec.fieldContext_ModelAvailability_displayName(ctx, field)
+			case "available":
+				return ec.fieldContext_ModelAvailability_available(ctx, field)
+			case "successRate":
+				return ec.fieldContext_ModelAvailability_successRate(ctx, field)
+			case "avgLatencyMs":
+				return ec.fieldContext_ModelAvailability_avgLatencyMs(ctx, field)
+			case "capabilities":
+				return ec.fieldContext_ModelAvailability_capabilities(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ModelAvailability", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_modelAvailability_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_requestStats(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -41593,7 +42238,7 @@ func (ec *executionContext) _Request_requestHeaders(ctx context.Context, field g
 		field,
 		ec.fieldContext_Request_requestHeaders,
 		func(ctx context.Context) (any, error) {
-			return obj.RequestHeaders, nil
+			return ec.resolvers.Request().RequestHeaders(ctx, obj)
 		},
 		nil,
 		ec.marshalOJSONRawMessage2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐJSONRawMessage,
@@ -41606,8 +42251,8 @@ func (ec *executionContext) fieldContext_Request_requestHeaders(_ context.Contex
 	fc = &graphql.FieldContext{
 		Object:     "Request",
 		Field:      field,
-		IsMethod:   false,
-		IsResolver: false,
+		IsMethod:   true,
+		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type JSONRawMessage does not have child fields")
 		},
@@ -43293,7 +43938,7 @@ func (ec *executionContext) _RequestExecution_requestHeaders(ctx context.Context
 		field,
 		ec.fieldContext_RequestExecution_requestHeaders,
 		func(ctx context.Context) (any, error) {
-			return obj.RequestHeaders, nil
+			return ec.resolvers.RequestExecution().RequestHeaders(ctx, obj)
 		},
 		nil,
 		ec.marshalOJSONRawMessage2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐJSONRawMessage,
@@ -43306,8 +43951,8 @@ func (ec *executionContext) fieldContext_RequestExecution_requestHeaders(_ conte
 	fc = &graphql.FieldContext{
 		Object:     "RequestExecution",
 		Field:      field,
-		IsMethod:   false,
-		IsResolver: false,
+		IsMethod:   true,
+		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type JSONRawMessage does not have child fields")
 		},
@@ -86563,6 +87208,101 @@ func (ec *executionContext) _ModelAssociationWhen(ctx context.Context, sel ast.S
 	return out
 }
 
+var modelAvailabilityImplementors = []string{"ModelAvailability"}
+
+func (ec *executionContext) _ModelAvailability(ctx context.Context, sel ast.SelectionSet, obj *ModelAvailability) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, modelAvailabilityImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ModelAvailability")
+		case "modelId":
+			out.Values[i] = ec._ModelAvailability_modelId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "displayName":
+			out.Values[i] = ec._ModelAvailability_displayName(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "available":
+			out.Values[i] = ec._ModelAvailability_available(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "successRate":
+			out.Values[i] = ec._ModelAvailability_successRate(ctx, field, obj)
+		case "avgLatencyMs":
+			out.Values[i] = ec._ModelAvailability_avgLatencyMs(ctx, field, obj)
+		case "capabilities":
+			out.Values[i] = ec._ModelAvailability_capabilities(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var modelCapabilitiesImplementors = []string{"ModelCapabilities"}
+
+func (ec *executionContext) _ModelCapabilities(ctx context.Context, sel ast.SelectionSet, obj *ModelCapabilities) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, modelCapabilitiesImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ModelCapabilities")
+		case "vision":
+			out.Values[i] = ec._ModelCapabilities_vision(ctx, field, obj)
+		case "toolCall":
+			out.Values[i] = ec._ModelCapabilities_toolCall(ctx, field, obj)
+		case "reasoning":
+			out.Values[i] = ec._ModelCapabilities_reasoning(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var modelCardImplementors = []string{"ModelCard"}
 
 func (ec *executionContext) _ModelCard(ctx context.Context, sel ast.SelectionSet, obj *objects.ModelCard) graphql.Marshaler {
@@ -89355,6 +90095,60 @@ func (ec *executionContext) _ProjectProfiles(ctx context.Context, sel ast.Select
 	return out
 }
 
+var projectUsageOverviewImplementors = []string{"ProjectUsageOverview"}
+
+func (ec *executionContext) _ProjectUsageOverview(ctx context.Context, sel ast.SelectionSet, obj *ProjectUsageOverview) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, projectUsageOverviewImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ProjectUsageOverview")
+		case "totalRequests":
+			out.Values[i] = ec._ProjectUsageOverview_totalRequests(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalTokens":
+			out.Values[i] = ec._ProjectUsageOverview_totalTokens(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "successRate":
+			out.Values[i] = ec._ProjectUsageOverview_successRate(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "todayRequests":
+			out.Values[i] = ec._ProjectUsageOverview_todayRequests(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var promptImplementors = []string{"Prompt", "Node"}
 
 func (ec *executionContext) _Prompt(ctx context.Context, sel ast.SelectionSet, obj *ent.Prompt) graphql.Marshaler {
@@ -90947,6 +91741,50 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "projectUsageOverview":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_projectUsageOverview(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "modelAvailability":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_modelAvailability(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "requestStats":
 			field := field
 
@@ -92345,7 +93183,38 @@ func (ec *executionContext) _Request(ctx context.Context, sel ast.SelectionSet, 
 				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "requestHeaders":
-			out.Values[i] = ec._Request_requestHeaders(ctx, field, obj)
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Request_requestHeaders(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "requestBody":
 			field := field
 
@@ -93164,7 +94033,38 @@ func (ec *executionContext) _RequestExecution(ctx context.Context, sel ast.Selec
 		case "metricsReasoningDurationMs":
 			out.Values[i] = ec._RequestExecution_metricsReasoningDurationMs(ctx, field, obj)
 		case "requestHeaders":
-			out.Values[i] = ec._RequestExecution_requestHeaders(ctx, field, obj)
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._RequestExecution_requestHeaders(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "request":
 			field := field
 
@@ -101884,6 +102784,60 @@ func (ec *executionContext) unmarshalNModelAssociationInput2ᚖgithubᚗcomᚋlo
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) marshalNModelAvailability2ᚕᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐModelAvailabilityᚄ(ctx context.Context, sel ast.SelectionSet, v []*ModelAvailability) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalNModelAvailability2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐModelAvailability(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNModelAvailability2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐModelAvailability(ctx context.Context, sel ast.SelectionSet, v *ModelAvailability) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ModelAvailability(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNModelCard2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelCard(ctx context.Context, sel ast.SelectionSet, v *objects.ModelCard) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -102722,6 +103676,20 @@ func (ec *executionContext) unmarshalNProjectStatus2githubᚗcomᚋloopljᚋaxon
 
 func (ec *executionContext) marshalNProjectStatus2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋentᚋprojectᚐStatus(ctx context.Context, sel ast.SelectionSet, v project.Status) graphql.Marshaler {
 	return v
+}
+
+func (ec *executionContext) marshalNProjectUsageOverview2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐProjectUsageOverview(ctx context.Context, sel ast.SelectionSet, v ProjectUsageOverview) graphql.Marshaler {
+	return ec._ProjectUsageOverview(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNProjectUsageOverview2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐProjectUsageOverview(ctx context.Context, sel ast.SelectionSet, v *ProjectUsageOverview) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ProjectUsageOverview(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNProjectWhereInput2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋentᚐProjectWhereInput(ctx context.Context, v any) (*ent.ProjectWhereInput, error) {
@@ -107814,6 +108782,13 @@ func (ec *executionContext) unmarshalOModelAssociationWhenInput2ᚖgithubᚗcom�
 	}
 	res, err := ec.unmarshalInputModelAssociationWhenInput(ctx, v)
 	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOModelCapabilities2ᚖgithubᚗcomᚋloopljᚋaxonhubᚋinternalᚋserverᚋgqlᚐModelCapabilities(ctx context.Context, sel ast.SelectionSet, v *ModelCapabilities) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._ModelCapabilities(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalOModelCardCostInput2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐModelCardCost(ctx context.Context, v any) (objects.ModelCardCost, error) {

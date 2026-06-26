@@ -26,6 +26,7 @@ import { Response as UIResponse } from '@/components/ai-elements/response';
 import { AutoCompleteSelect } from '@/components/auto-complete-select';
 import { useQueryChannels } from '@/features/channels/data/channels';
 import { usePermissions } from '@/hooks/usePermissions';
+import { ModelAvailabilityPanel } from './components/model-availability-panel';
 
 type PlaygroundModelSource = 'channel' | 'model_gateway';
 
@@ -332,6 +333,9 @@ export default function Playground() {
           <div className='border-b p-4'>
             <h1 className='text-xl font-bold tracking-tight'>{t('playground.title')}</h1>
             <p className='text-muted-foreground mt-1 text-xs leading-relaxed'>{t('playground.description')}</p>
+            <div className='mt-3'>
+              <ModelAvailabilityPanel />
+            </div>
           </div>
 
           <ScrollArea className='min-h-0 flex-1 p-4'>

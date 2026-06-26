@@ -272,7 +272,9 @@ func (_c *RequestExecutionCreate) Mutation() *RequestExecutionMutation {
 
 // Save creates the RequestExecution in the database.
 func (_c *RequestExecutionCreate) Save(ctx context.Context) (*RequestExecution, error) {
-	_c.defaults()
+	if err := _c.defaults(); err != nil {
+		return nil, err
+	}
 	return withHooks(ctx, _c.sqlSave, _c.mutation, _c.hooks)
 }
 
@@ -299,12 +301,18 @@ func (_c *RequestExecutionCreate) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (_c *RequestExecutionCreate) defaults() {
+func (_c *RequestExecutionCreate) defaults() error {
 	if _, ok := _c.mutation.CreatedAt(); !ok {
+		if requestexecution.DefaultCreatedAt == nil {
+			return fmt.Errorf("ent: uninitialized requestexecution.DefaultCreatedAt (forgotten import ent/runtime?)")
+		}
 		v := requestexecution.DefaultCreatedAt()
 		_c.mutation.SetCreatedAt(v)
 	}
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
+		if requestexecution.DefaultUpdatedAt == nil {
+			return fmt.Errorf("ent: uninitialized requestexecution.DefaultUpdatedAt (forgotten import ent/runtime?)")
+		}
 		v := requestexecution.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
@@ -320,6 +328,7 @@ func (_c *RequestExecutionCreate) defaults() {
 		v := requestexecution.DefaultStream
 		_c.mutation.SetStream(v)
 	}
+	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.

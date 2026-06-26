@@ -1,6 +1,10 @@
 {
   "playground.title": "Playground",
   "playground.description": "Interactive environment for testing AI models.",
+  "playground.modelAvailability.button": "Model Availability",
+  "playground.modelAvailability.title": "Model Availability",
+  "playground.modelAvailability.myUsage": "My Usage",
+  "playground.modelAvailability.global": "Global",
   "playground.settings.modelSource": "Test mode",
   "playground.settings.channel": "Channel",
   "playground.settings.selectChannel": "Select a channel",

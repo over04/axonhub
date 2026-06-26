@@ -1134,10 +1134,22 @@ func (s *RequestService) UpdateRequestChannelID(ctx context.Context, requestID i
 	return nil
 }
 
+// CanViewRequestContent reports whether the current caller may read request
+// bodies, responses, chunks, and headers. Only the system owner may view raw
+// request content; registered (non-owner) users see metadata only.
+func CanViewRequestContent(ctx context.Context) bool {
+	user, ok := contexts.GetUser(ctx)
+	return ok && user != nil && user.IsOwner
+}
+
 // LoadRequestBody returns the stored request body, loading from external storage when necessary.
 func (s *RequestService) LoadRequestBody(ctx context.Context, req *ent.Request) (objects.JSONRawMessage, error) {
 	if req == nil {
 		return nil, fmt.Errorf("request is nil")
+	}
+
+	if !CanViewRequestContent(ctx) {
+		return xjson.EmptyJSONRawMessage, nil
 	}
 
 	dataStorage, err := s.getDataStorage(ctx, req.DataStorageID)
@@ -1172,6 +1184,10 @@ func (s *RequestService) LoadRequestBody(ctx context.Context, req *ent.Request) 
 func (s *RequestService) LoadResponseBody(ctx context.Context, req *ent.Request) (objects.JSONRawMessage, error) {
 	if req == nil {
 		return nil, fmt.Errorf("request is nil")
+	}
+
+	if !CanViewRequestContent(ctx) {
+		return xjson.EmptyJSONRawMessage, nil
 	}
 
 	// Only load response body if request is completed
@@ -1212,6 +1228,11 @@ func (s *RequestService) LoadResponseChunks(ctx context.Context, req *ent.Reques
 	if req == nil {
 		return nil, fmt.Errorf("request is nil")
 	}
+
+	if !CanViewRequestContent(ctx) {
+		return []objects.JSONRawMessage{}, nil
+	}
+
 	// Live preview for active streaming requests
 	if req.Stream && req.Status == request.StatusProcessing {
 		chunks := s.LiveStreamRegistry.GetRequestChunks(req.ID)
@@ -1260,6 +1281,10 @@ func (s *RequestService) LoadRequestExecutionRequestBody(ctx context.Context, ex
 		return nil, fmt.Errorf("request execution is nil")
 	}
 
+	if !CanViewRequestContent(ctx) {
+		return xjson.EmptyJSONRawMessage, nil
+	}
+
 	dataStorage, err := s.getDataStorage(ctx, exec.DataStorageID)
 	if err != nil {
 		log.Warn(ctx, "Failed to get data storage for execution request body", log.Cause(err), log.Int("execution_id", exec.ID))
@@ -1292,6 +1317,10 @@ func (s *RequestService) LoadRequestExecutionRequestBody(ctx context.Context, ex
 func (s *RequestService) LoadRequestExecutionResponseBody(ctx context.Context, exec *ent.RequestExecution) (objects.JSONRawMessage, error) {
 	if exec == nil {
 		return nil, fmt.Errorf("request execution is nil")
+	}
+
+	if !CanViewRequestContent(ctx) {
+		return xjson.EmptyJSONRawMessage, nil
 	}
 
 	// Only load response body if execution is completed
@@ -1331,6 +1360,10 @@ func (s *RequestService) LoadRequestExecutionResponseBody(ctx context.Context, e
 func (s *RequestService) LoadRequestExecutionResponseChunks(ctx context.Context, exec *ent.RequestExecution) ([]objects.JSONRawMessage, error) {
 	if exec == nil {
 		return nil, fmt.Errorf("request execution is nil")
+	}
+
+	if !CanViewRequestContent(ctx) {
+		return []objects.JSONRawMessage{}, nil
 	}
 
 	// Live preview for active streaming executions

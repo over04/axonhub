@@ -10,6 +10,7 @@ import {
   IconDatabase,
   IconAB2,
   IconBaselineDensityMedium,
+  IconChartBar,
   IconAi,
   IconNote,
 } from '@tabler/icons-react';
@@ -127,6 +128,11 @@ export function useSidebarData(): SidebarData {
           title: t('sidebar.items.requests'),
           url: '/project/requests',
           icon: IconActivity,
+        } as NavLink,
+        {
+          title: t('sidebar.items.usage'),
+          url: '/project/usage',
+          icon: IconChartBar,
         } as NavLink,
         // {
         //   title: t('sidebar.items.usageLogs'),

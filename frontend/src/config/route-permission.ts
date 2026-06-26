@@ -89,6 +89,12 @@ export const routeConfigs: RouteGroup[] = [
       {
         path: '/project/requests',
         requiredScopes: ['read_requests'],
+        scopeLevel: 'system', // 请求内容对非 owner 全屏蔽（owner 门控），隐藏入口避免空内容页
+        mode: 'hidden',
+      },
+      {
+        path: '/project/usage',
+        requiredScopes: ['read_requests'],
         mode: 'hidden',
       },
       {
@@ -99,11 +105,13 @@ export const routeConfigs: RouteGroup[] = [
       {
         path: '/project/traces',
         requiredScopes: ['read_requests'],
+        scopeLevel: 'system', // trace 视图依赖请求体，非 owner 拿不到内容，隐藏入口
         mode: 'hidden',
       },
       {
         path: '/project/threads',
         requiredScopes: ['read_requests'],
+        scopeLevel: 'system', // 会话视图含完整请求/响应，非 owner 屏蔽内容，隐藏入口
         mode: 'hidden',
       },
       {
