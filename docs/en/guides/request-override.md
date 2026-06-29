@@ -90,6 +90,21 @@ Condition fields:
 
 Numeric comparison modes require both compared values to be numbers.
 
+### Reading request headers
+
+To read an inbound client request header in a condition, set `path` to `request_headers.<header>` using a lowercase header name (for example `request_headers.x-custom-flag`). The body path takes priority and the runtime context is only read when the body lacks that path, so a body field with the same name wins; use a path that does not collide with a body field to avoid ambiguity.
+
+```json
+{
+  "mode": "set",
+  "path": "model",
+  "value": "gpt-4o",
+  "conditions": [
+    { "path": "request_headers.x-route-tag", "mode": "full", "value": "premium" }
+  ]
+}
+```
+
 ## Body Operations
 
 These operations modify the JSON request body.

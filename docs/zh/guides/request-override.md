@@ -88,6 +88,21 @@
 
 数值比较模式要求两侧都是数字。
 
+### 读取请求头
+
+条件要读取客户端入站请求头时，`path` 写成 `request_headers.<header名>`，请求头名称用小写（例如 `request_headers.x-custom-flag`）。请求体不存在该路径时才回退到运行时上下文，因此若请求体恰好有同名字段，会优先取请求体；要避免歧义可改用不会与请求体冲突的路径。
+
+```json
+{
+  "mode": "set",
+  "path": "model",
+  "value": "gpt-4o",
+  "conditions": [
+    { "path": "request_headers.x-route-tag", "mode": "full", "value": "premium" }
+  ]
+}
+```
+
 ## 请求体操作
 
 这些操作修改 JSON 请求体。
