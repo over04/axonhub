@@ -121,7 +121,36 @@ type ChannelSettings struct {
 	// trigger retry for this channel. When Regex is false, Pattern is matched as a
 	// case-sensitive substring of the error text.
 	RetryableErrorPatterns []RetryableErrorPattern `json:"retryableErrorPatterns,omitempty"`
+
+	// StreamInterruption controls the upstream stream-interruption recovery policy:
+	// what to do when an upstream SSE stream ends abnormally (mid-stream drop
+	// without the protocol's standard termination signal).
+	// nil = inherit the global default (StreamInterruptionDefault on RetryPolicy);
+	// otherwise overrides per channel.
+	// Not effective when PassThroughBody is enabled — fake-stream buffering and
+	// complete-event synthesis require the transform pipeline, so the policy is
+	// forced to "none" in that case.
+	StreamInterruption *StreamInterruptionPolicy `json:"streamInterruption,omitempty"`
 }
+
+// StreamInterruptionPolicy controls how the channel handles upstream SSE
+// streams that end abnormally (connection drop mid-stream without the
+// protocol's standard termination signal).
+type StreamInterruptionPolicy string
+
+const (
+	// StreamInterruptionNone: no recovery; client receives the truncated stream (current behavior).
+	StreamInterruptionNone StreamInterruptionPolicy = "none"
+	// StreamInterruptionComplete: synthesize the protocol's standard termination
+	// events (max_tokens / length semantics) so the client ends cleanly.
+	// Note: this misrepresents a mid-stream drop as a length-capped truncation.
+	StreamInterruptionComplete StreamInterruptionPolicy = "complete"
+	// StreamInterruptionFakeStream: buffer the full upstream stream server-side,
+	// replay to client as SSE only after the complete stream is received; a
+	// mid-stream drop during buffering triggers the existing retry flow with
+	// zero bytes sent to the client.
+	StreamInterruptionFakeStream StreamInterruptionPolicy = "fakeStream"
+)
 
 type RetryableErrorPattern struct {
 	Pattern string `json:"pattern"`

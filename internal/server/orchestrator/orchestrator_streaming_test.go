@@ -422,6 +422,8 @@ func TestChatCompletionOrchestrator_Process_Streaming(t *testing.T) {
 				`{"id":"chatcmpl-123","object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}`,
 			),
 		},
+		// OpenAI streams terminate with "data: [DONE]" per the streaming spec.
+		{Data: []byte("[DONE]")},
 	}
 
 	executor := &mockExecutor{
@@ -479,8 +481,8 @@ func TestChatCompletionOrchestrator_Process_Streaming(t *testing.T) {
 	err = result.ChatCompletionStream.Close()
 	require.NoError(t, err)
 
-	// Verify chunks were received
-	assert.Len(t, chunks, 4)
+	// Verify chunks were received (4 content chunks + the [DONE] terminator).
+	assert.Len(t, chunks, 5)
 
 	// Verify request was created in database
 	requests, err := client.Request.Query().All(ctx)
@@ -530,6 +532,21 @@ func TestChatCompletionOrchestrator_Process_StreamingError(t *testing.T) {
 		},
 		streamErr: midStreamErr,
 	}
+
+	// This test verifies mid-stream error propagation to the client (partial
+	// content then error), which is the "none" interruption policy's behavior.
+	// Pin the policy to "none" explicitly so the stream is forwarded to the
+	// client instead of buffered server-side, regardless of the global default.
+	nonePolicy := objects.StreamInterruptionNone
+	require.NoError(t, systemService.SetRetryPolicy(ctx, &biz.RetryPolicy{
+		Enabled:                      true,
+		MaxChannelRetries:            3,
+		MaxSingleChannelRetries:      2,
+		RetryDelayMs:                 1000,
+		LoadBalancerStrategy:         "adaptive",
+		UpstreamErrorPolicy:          biz.UpstreamErrorPolicy{Mode: biz.UpstreamErrorModePassthrough},
+		StreamInterruptionDefault:    nonePolicy,
+	}))
 
 	// Create outbound transformer
 	outbound, err := openai.NewOutboundTransformer(ch.BaseURL, ch.Credentials.APIKey)
@@ -626,6 +643,8 @@ func TestChatCompletionOrchestrator_Process_StreamingSuccess_NotMarkedAsError(t 
 				`{"id":"chatcmpl-ok","object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}`,
 			),
 		},
+		// OpenAI streams terminate with "data: [DONE]" per the streaming spec.
+		{Data: []byte("[DONE]")},
 	}
 
 	executor := &mockExecutor{streamEvents: streamEvents}

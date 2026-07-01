@@ -214,3 +214,31 @@ func mapHTTPStatusToGeminiStatus(statusCode int) string {
 		return "UNKNOWN"
 	}
 }
+
+// CompletionEvents synthesizes the Gemini standard termination events for an
+// abnormally-ended stream: a response with candidates[].finishReason="MAX_TOKENS".
+// Gemini does not use a [DONE] sentinel; termination is signaled by finishReason.
+//
+// The synthesized event MUST always be returned so the "complete" policy does
+// not silently degrade to "none" when the transform path hits an edge case.
+// The fallback below is a minimal but protocol-valid Gemini terminal chunk.
+func (t *InboundTransformer) CompletionEvents(ctx context.Context) []*httpclient.StreamEvent {
+	length := "length"
+	terminalResp := &llm.Response{
+		Choices: []llm.Choice{{
+			Index:        0,
+			FinishReason: &length,
+			Delta:        &llm.Message{},
+		}},
+	}
+	chunk, err := t.TransformStreamChunk(ctx, terminalResp)
+	if err != nil || chunk == nil {
+		// Protocol-valid fallback: finishReason=MAX_TOKENS is Gemini's terminal
+		// signal. Never return nil — that would drop the synthesized terminator
+		// and leave the client with a truncated stream under the "complete" policy.
+		return []*httpclient.StreamEvent{{
+			Data: []byte(`{"candidates":[{"finishReason":"MAX_TOKENS","index":0}]}`),
+		}}
+	}
+	return []*httpclient.StreamEvent{chunk}
+}

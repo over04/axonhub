@@ -145,6 +145,32 @@ func (t *InboundTransformer) TransformStreamChunk(
 	}, nil
 }
 
+// CompletionEvents synthesizes the OpenAI standard termination events for an
+// abnormally-ended stream: a chunk with finish_reason="length" (honest
+// "truncated" semantics) followed by [DONE].
+func (t *InboundTransformer) CompletionEvents(ctx context.Context) []*httpclient.StreamEvent {
+	length := "length"
+	terminalResp := &llm.Response{
+		// Match the object value outbound sets on real streaming chunks so the
+		// synthesized terminator is not rejected by strict clients.
+		Object: "chat.completion.chunk",
+		Choices: []llm.Choice{{
+			Index:        0,
+			FinishReason: &length,
+			Delta:        &llm.Message{},
+		}},
+	}
+	chunk, err := t.TransformStreamChunk(ctx, terminalResp)
+	if err != nil || chunk == nil {
+		return []*httpclient.StreamEvent{{Data: []byte("[DONE]")}}
+	}
+	done, _ := t.TransformStreamChunk(ctx, llm.DoneResponse)
+	if done == nil {
+		done = &httpclient.StreamEvent{Data: []byte("[DONE]")}
+	}
+	return []*httpclient.StreamEvent{chunk, done}
+}
+
 // isReasoningSignatureEvent checks if the response contains ONLY ReasoningSignature.
 // This is a helper function to filter out reasoning signature events when transforming
 // to OpenAI format, since OpenAI format doesn't support ReasoningSignature in streaming.

@@ -605,3 +605,42 @@ func (r *queryResolver) GetCacheDiagnostics(ctx context.Context, input *GetCache
 		Targets:  normalizeDiagnosticsTargets(targets),
 	}, nil
 }
+
+// StreamInterruptionDefault is the resolver for the streamInterruptionDefault field.
+func (r *retryPolicyResolver) StreamInterruptionDefault(ctx context.Context, obj *biz.RetryPolicy) (string, error) {
+	if obj == nil {
+		return string(objects.StreamInterruptionNone), nil
+	}
+	return string(obj.StreamInterruptionDefault), nil
+}
+
+// StreamInterruptionDefault is the resolver for the streamInterruptionDefault field.
+func (r *updateRetryPolicyInputResolver) StreamInterruptionDefault(ctx context.Context, obj *biz.RetryPolicy, data *string) error {
+	if obj == nil {
+		return nil
+	}
+	// An empty/absent input means "leave unchanged"; normalizeRetryPolicy fills
+	// in the default (none) if the field ends up empty at save time.
+	if data == nil || *data == "" {
+		return nil
+	}
+	policy := objects.StreamInterruptionPolicy(*data)
+	switch policy {
+	case objects.StreamInterruptionNone, objects.StreamInterruptionComplete, objects.StreamInterruptionFakeStream:
+		obj.StreamInterruptionDefault = policy
+		return nil
+	default:
+		return fmt.Errorf("invalid streamInterruptionDefault value %q: must be one of none, complete, fakeStream", *data)
+	}
+}
+
+// RetryPolicy returns RetryPolicyResolver implementation.
+func (r *Resolver) RetryPolicy() RetryPolicyResolver { return &retryPolicyResolver{r} }
+
+// UpdateRetryPolicyInput returns UpdateRetryPolicyInputResolver implementation.
+func (r *Resolver) UpdateRetryPolicyInput() UpdateRetryPolicyInputResolver {
+	return &updateRetryPolicyInputResolver{r}
+}
+
+type retryPolicyResolver struct{ *Resolver }
+type updateRetryPolicyInputResolver struct{ *Resolver }

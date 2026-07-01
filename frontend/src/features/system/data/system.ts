@@ -101,6 +101,7 @@ const RETRY_POLICY_QUERY = `
       loadBalancerStrategy
       enabled
       emptyResponseDetection
+      streamInterruptionDefault
       upstreamErrorPolicy {
         mode
         customMessage
@@ -361,6 +362,7 @@ export interface RetryPolicy {
   enabled: boolean;
   autoDisableChannel: AutoDisableChannel;
   emptyResponseDetection: boolean;
+  streamInterruptionDefault: string;
   upstreamErrorPolicy: UpstreamErrorPolicy;
 }
 
@@ -389,6 +391,7 @@ export interface RetryPolicyInput {
   enabled?: boolean;
   autoDisableChannel?: AutoDisableChannelInput;
   emptyResponseDetection?: boolean;
+  streamInterruptionDefault?: string;
   upstreamErrorPolicy?: Partial<UpstreamErrorPolicy>;
 }
 

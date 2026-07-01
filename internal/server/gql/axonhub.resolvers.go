@@ -116,6 +116,15 @@ func (r *channelResolver) LiveLimiterStats(ctx context.Context, obj *ent.Channel
 	}, nil
 }
 
+// StreamInterruption is the resolver for the streamInterruption field.
+func (r *channelSettingsResolver) StreamInterruption(ctx context.Context, obj *objects.ChannelSettings) (*string, error) {
+	if obj == nil || obj.StreamInterruption == nil {
+		return nil, nil
+	}
+	v := string(*obj.StreamInterruption)
+	return &v, nil
+}
+
 // CreateChannel is the resolver for the createChannel field.
 func (r *mutationResolver) CreateChannel(ctx context.Context, input ent.CreateChannelInput) (*ent.Channel, error) {
 	return r.channelService.CreateChannel(ctx, input)
@@ -740,11 +749,41 @@ func (r *traceResolver) UsageMetadata(ctx context.Context, obj *ent.Trace) (*biz
 	return r.traceService.UsageMetadata(ctx, obj.ID)
 }
 
+// StreamInterruption is the resolver for the streamInterruption field.
+func (r *channelSettingsInputResolver) StreamInterruption(ctx context.Context, obj *objects.ChannelSettings, data *string) error {
+	if obj == nil {
+		return nil
+	}
+	if data == nil || *data == "" {
+		// nil / empty means "inherit the global default".
+		obj.StreamInterruption = nil
+		return nil
+	}
+	policy := objects.StreamInterruptionPolicy(*data)
+	switch policy {
+	case objects.StreamInterruptionNone, objects.StreamInterruptionComplete, objects.StreamInterruptionFakeStream:
+		obj.StreamInterruption = &policy
+		return nil
+	default:
+		return fmt.Errorf("invalid streamInterruption value %q: must be one of none, complete, fakeStream", *data)
+	}
+}
+
+// ChannelSettings returns ChannelSettingsResolver implementation.
+func (r *Resolver) ChannelSettings() ChannelSettingsResolver { return &channelSettingsResolver{r} }
+
 // Mutation returns MutationResolver implementation.
 func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
 
 // Segment returns SegmentResolver implementation.
 func (r *Resolver) Segment() SegmentResolver { return &segmentResolver{r} }
 
+// ChannelSettingsInput returns ChannelSettingsInputResolver implementation.
+func (r *Resolver) ChannelSettingsInput() ChannelSettingsInputResolver {
+	return &channelSettingsInputResolver{r}
+}
+
+type channelSettingsResolver struct{ *Resolver }
 type mutationResolver struct{ *Resolver }
 type segmentResolver struct{ *Resolver }
+type channelSettingsInputResolver struct{ *Resolver }

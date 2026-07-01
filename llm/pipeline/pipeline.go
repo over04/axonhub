@@ -91,6 +91,29 @@ func WithResponseTimeouts(streamFirstEventTimeout, nonStreamTimeout time.Duratio
 	}
 }
 
+// StreamInterruptionPolicy controls the upstream stream-interruption recovery policy.
+// This is the llm-pipeline-level mirror of objects.StreamInterruptionPolicy;
+// the effective value is resolved at runtime by the Outbound transformer
+// (StreamInterruptionResolver) once a channel candidate is selected, so it is
+// not a static pipeline Option.
+type StreamInterruptionPolicy string
+
+const (
+	StreamInterruptionNone       StreamInterruptionPolicy = "none"
+	StreamInterruptionComplete   StreamInterruptionPolicy = "complete"
+	StreamInterruptionFakeStream StreamInterruptionPolicy = "fakeStream"
+)
+
+// StreamInterruptionResolver is an optional interface implemented by the
+// Outbound transformer to resolve the effective stream-interruption policy at
+// runtime (channel override > global default; forced to "none" when the
+// channel uses body pass-through, since fakeStream/complete require the
+// transform pipeline). Implementations must be safe to call from
+// processRequest, i.e. after candidate selection has run.
+type StreamInterruptionResolver interface {
+	ResolveStreamInterruption(ctx context.Context) StreamInterruptionPolicy
+}
+
 // Factory creates pipeline instances.
 type Factory struct {
 	Executor Executor
@@ -406,7 +429,7 @@ func (p *pipeline) processRequest(ctx context.Context, request *llm.Request) (*R
 			Stream: true,
 		}
 
-		stream, err := p.stream(ctx, executor, httpReq, p.streamFirstEventTimeout)
+		stream, err := p.streamForPolicy(ctx, executor, httpReq)
 		if err != nil {
 			return nil, fmt.Errorf("failed to stream request: %w", err)
 		}
@@ -449,6 +472,47 @@ func (p *pipeline) processRequest(ctx context.Context, request *llm.Request) (*R
 	}
 
 	return result, nil
+}
+
+// streamForPolicy dispatches the streaming request according to the effective
+// stream-interruption policy, resolved at runtime from the Outbound transformer.
+func (p *pipeline) streamForPolicy(
+	ctx context.Context,
+	executor Executor,
+	httpReq *httpclient.Request,
+) (streams.Stream[*httpclient.StreamEvent], error) {
+	policy := StreamInterruptionNone
+	if resolver, ok := p.Outbound.(StreamInterruptionResolver); ok {
+		policy = resolver.ResolveStreamInterruption(ctx)
+	}
+
+	switch policy {
+	case StreamInterruptionFakeStream:
+		res, err := p.bufferAndReplayStream(ctx, executor, httpReq)
+		if err != nil {
+			return nil, err
+		}
+		return res.EventStream, nil
+	case StreamInterruptionComplete:
+		stream, err := p.stream(ctx, executor, httpReq, p.streamFirstEventTimeout)
+		if err != nil {
+			return nil, err
+		}
+		return p.wrapWithCompletingStream(ctx, stream), nil
+	default: // StreamInterruptionNone
+		return p.stream(ctx, executor, httpReq, p.streamFirstEventTimeout)
+	}
+}
+
+// wrapWithCompletingStream wraps an inbound stream with a completingStream if
+// the inbound transformer implements StreamCompleter; otherwise returns the
+// stream unchanged (complete-policy is a no-op when the inbound format cannot
+// synthesize termination events).
+func (p *pipeline) wrapWithCompletingStream(ctx context.Context, stream streams.Stream[*httpclient.StreamEvent]) streams.Stream[*httpclient.StreamEvent] {
+	if completer, ok := p.Inbound.(transformer.StreamCompleter); ok {
+		return newCompletingStream(stream, completer, ctx)
+	}
+	return stream
 }
 
 // getMaxSameChannelRetries returns the maximum number of same-channel retries.

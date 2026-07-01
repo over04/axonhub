@@ -349,6 +349,13 @@ type RetryPolicy struct {
 
 	// UpstreamErrorPolicy controls how provider errors are exposed to API users.
 	UpstreamErrorPolicy UpstreamErrorPolicy `json:"upstream_error_policy"`
+
+	// StreamInterruptionDefault is the global default for a channel's
+	// StreamInterruption policy when the channel leaves it nil (inherit).
+	// Default: "none" — fakeStream/complete alter how the upstream stream is
+	// delivered to the client (server-side buffering or synthesized tail), so
+	// they must be opted into explicitly rather than applied silently.
+	StreamInterruptionDefault objects.StreamInterruptionPolicy `json:"stream_interruption_default"`
 }
 
 type UpstreamErrorPolicy struct {
@@ -1171,6 +1178,10 @@ func normalizeRetryPolicy(policy *RetryPolicy) {
 	if policy.UpstreamErrorPolicy.Mode == UpstreamErrorModeCustom &&
 		strings.TrimSpace(policy.UpstreamErrorPolicy.CustomMessage) == "" {
 		policy.UpstreamErrorPolicy.Mode = UpstreamErrorModeHidden
+	}
+
+	if policy.StreamInterruptionDefault == "" {
+		policy.StreamInterruptionDefault = defaultRetryPolicy.StreamInterruptionDefault
 	}
 }
 

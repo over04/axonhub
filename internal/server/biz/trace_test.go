@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/looplj/axonhub/internal/authz"
+	"github.com/looplj/axonhub/internal/contexts"
 	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/ent/datastorage"
 	"github.com/looplj/axonhub/internal/ent/enttest"
@@ -56,7 +57,43 @@ func setupTestTraceService(t *testing.T, client *ent.Client) (*TraceService, *en
 		Ent:            client,
 	})
 
+	// CanViewRequestContent gates request body access on the caller being the
+	// system owner. The owner user is created once here and stored on the
+	// client via a package-level test helper so trace tests — which load
+	// request bodies to build spans — run as the owner.
+	setTestOwnerUser(t, client, ctx)
+
 	return traceService, client
+}
+
+// setTestOwnerUser creates the system owner user and stores it for retrieval by
+// trace tests via testOwnerUser. Trace span construction reads request bodies,
+// which CanViewRequestContent restricts to the owner.
+func setTestOwnerUser(t *testing.T, client *ent.Client, ctx context.Context) *ent.User {
+	t.Helper()
+
+	owner, err := client.User.Create().
+		SetEmail("trace-owner@test.local").
+		SetPassword("test").
+		SetIsOwner(true).
+		Save(ctx)
+	require.NoError(t, err)
+	testOwnerUser = owner
+	return owner
+}
+
+// testOwnerUser holds the owner user created by setupTestTraceService, so trace
+// tests can inject it into the context via contexts.WithUser.
+var testOwnerUser *ent.User
+
+// withOwnerCtx returns ctx augmented with the test owner user, so request body
+// loading (gated by CanViewRequestContent) succeeds during trace construction.
+func withOwnerCtx(ctx context.Context) context.Context {
+	if testOwnerUser == nil {
+		return ctx
+	}
+
+	return contexts.WithUser(ctx, testOwnerUser)
 }
 
 func findSpanByType(spans []Span, spanType string) *Span {
@@ -88,6 +125,7 @@ func TestRequestService_LoadersReturnEmptyJSONAndSlices(t *testing.T) {
 	ctx := context.Background()
 	ctx = ent.NewContext(ctx, client)
 	ctx = authz.WithTestBypass(ctx)
+	ctx = withOwnerCtx(ctx)
 
 	projectEntity, err := client.Project.Create().
 		SetName("request-loader-project").
@@ -151,6 +189,7 @@ func TestTraceService_GetOrCreateTrace(t *testing.T) {
 	ctx := context.Background()
 	ctx = ent.NewContext(ctx, client)
 	ctx = authz.WithTestBypass(ctx)
+	ctx = withOwnerCtx(ctx)
 
 	// Create a test project
 	testProject, err := client.Project.Create().
@@ -192,6 +231,7 @@ func TestTraceService_GetOrCreateTrace_WithThread(t *testing.T) {
 	ctx := context.Background()
 	ctx = ent.NewContext(ctx, client)
 	ctx = authz.WithTestBypass(ctx)
+	ctx = withOwnerCtx(ctx)
 
 	// Create a test project
 	testProject, err := client.Project.Create().
@@ -225,6 +265,7 @@ func TestTraceService_GetOrCreateTrace_DifferentProjects(t *testing.T) {
 	ctx := context.Background()
 	ctx = ent.NewContext(ctx, client)
 	ctx = authz.WithTestBypass(ctx)
+	ctx = withOwnerCtx(ctx)
 
 	// Create two test projects
 	project1, err := client.Project.Create().
@@ -264,6 +305,7 @@ func TestTraceService_GetTraceByID(t *testing.T) {
 	ctx := context.Background()
 	ctx = ent.NewContext(ctx, client)
 	ctx = authz.WithTestBypass(ctx)
+	ctx = withOwnerCtx(ctx)
 
 	// Create a test project
 	testProject, err := client.Project.Create().
@@ -301,6 +343,7 @@ func TestTraceService_GetRequestTrace(t *testing.T) {
 	ctx := context.Background()
 	ctx = ent.NewContext(ctx, client)
 	ctx = authz.WithTestBypass(ctx)
+	ctx = withOwnerCtx(ctx)
 
 	// Create a test project
 	testProject, err := client.Project.Create().
@@ -391,6 +434,7 @@ func TestTraceService_GetRequestTrace_WithToolCalls(t *testing.T) {
 	ctx := context.Background()
 	ctx = ent.NewContext(ctx, client)
 	ctx = authz.WithTestBypass(ctx)
+	ctx = withOwnerCtx(ctx)
 
 	// Create a test project
 	testProject, err := client.Project.Create().
@@ -487,6 +531,7 @@ func TestTraceService_GetRequestTrace_AnthropicResponseTransformation(t *testing
 	ctx := context.Background()
 	ctx = ent.NewContext(ctx, client)
 	ctx = authz.WithTestBypass(ctx)
+	ctx = withOwnerCtx(ctx)
 
 	projectEntity, err := client.Project.Create().
 		SetName("anthropic-project").
@@ -578,6 +623,7 @@ func TestTraceService_GetRequestTrace_WithReasoningContent(t *testing.T) {
 	ctx := context.Background()
 	ctx = ent.NewContext(ctx, client)
 	ctx = authz.WithTestBypass(ctx)
+	ctx = withOwnerCtx(ctx)
 
 	// Create a test project
 	testProject, err := client.Project.Create().
@@ -712,6 +758,7 @@ func TestTraceService_GetRequestTrace_EmptyTrace(t *testing.T) {
 	ctx := context.Background()
 	ctx = ent.NewContext(ctx, client)
 	ctx = authz.WithTestBypass(ctx)
+	ctx = withOwnerCtx(ctx)
 
 	// Create a test project
 	testProject, err := client.Project.Create().
@@ -741,6 +788,7 @@ func TestTraceService_GetRequestTrace_MultipleRequestsWithToolResults(t *testing
 	ctx := context.Background()
 	ctx = ent.NewContext(ctx, client)
 	ctx = authz.WithTestBypass(ctx)
+	ctx = withOwnerCtx(ctx)
 
 	projectEntity, err := client.Project.Create().
 		SetName("multi-request-project").
@@ -893,6 +941,7 @@ func TestTraceService_GetRootSegment_TreeByToolCallID(t *testing.T) {
 	ctx := context.Background()
 	ctx = ent.NewContext(ctx, client)
 	ctx = authz.WithTestBypass(ctx)
+	ctx = withOwnerCtx(ctx)
 
 	projectEntity, err := client.Project.Create().
 		SetName("tree-project").
@@ -1058,6 +1107,7 @@ func TestTraceService_GetRootSegment_TreeBySpanPrefixMatch(t *testing.T) {
 	ctx := context.Background()
 	ctx = ent.NewContext(ctx, client)
 	ctx = authz.WithTestBypass(ctx)
+	ctx = withOwnerCtx(ctx)
 
 	projectEntity, err := client.Project.Create().
 		SetName("prefix-project").
@@ -1173,6 +1223,7 @@ func TestTraceService_GetRootSegment_FallbackChronologicalNearest(t *testing.T) 
 	ctx := context.Background()
 	ctx = ent.NewContext(ctx, client)
 	ctx = authz.WithTestBypass(ctx)
+	ctx = withOwnerCtx(ctx)
 
 	projectEntity, err := client.Project.Create().
 		SetName("fallback-project").
@@ -1428,6 +1479,7 @@ func TestTraceService_GetRootSegment_CrossTraceDedup(t *testing.T) {
 		ctx := context.Background()
 		ctx = ent.NewContext(ctx, client)
 		ctx = authz.WithTestBypass(ctx)
+		ctx = withOwnerCtx(ctx)
 
 		projectEntity, err := client.Project.Create().
 			SetName("cross-trace-project").
@@ -1547,6 +1599,7 @@ func TestTraceService_GetRootSegment_CrossTraceDedup(t *testing.T) {
 		ctx := context.Background()
 		ctx = ent.NewContext(ctx, client)
 		ctx = authz.WithTestBypass(ctx)
+		ctx = withOwnerCtx(ctx)
 
 		projectEntity, err := client.Project.Create().
 			SetName("no-thread-project").
@@ -1604,6 +1657,7 @@ func TestTraceService_GetRootSegment_CrossTraceDedup(t *testing.T) {
 		ctx := context.Background()
 		ctx = ent.NewContext(ctx, client)
 		ctx = authz.WithTestBypass(ctx)
+		ctx = withOwnerCtx(ctx)
 
 		projectEntity, err := client.Project.Create().
 			SetName("first-in-thread-project").
@@ -1669,6 +1723,7 @@ func TestTraceService_GetRootSegment_CrossTraceDedup(t *testing.T) {
 		ctx := context.Background()
 		ctx = ent.NewContext(ctx, client)
 		ctx = authz.WithTestBypass(ctx)
+		ctx = withOwnerCtx(ctx)
 
 		projectEntity, err := client.Project.Create().
 			SetName("cross-trace-tools-project").
@@ -1797,6 +1852,7 @@ func TestTraceService_GetRootSegment_CrossTraceDedup(t *testing.T) {
 		ctx := context.Background()
 		ctx = ent.NewContext(ctx, client)
 		ctx = authz.WithTestBypass(ctx)
+		ctx = withOwnerCtx(ctx)
 
 		projectEntity, err := client.Project.Create().
 			SetName("cross-trace-combined-project").
@@ -1925,6 +1981,7 @@ func TestTraceService_GetRequestTrace_integration(t *testing.T) {
 	ctx := context.Background()
 	ctx = ent.NewContext(ctx, client)
 	ctx = authz.WithTestBypass(ctx)
+	ctx = withOwnerCtx(ctx)
 
 	// Test GetRequestTrace
 	traceRoot, err := traceService.GetRootSegment(ctx, 153)

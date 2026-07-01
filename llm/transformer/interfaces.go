@@ -30,6 +30,20 @@ type Inbound interface {
 	AggregateStreamChunks(ctx context.Context, chunks []*httpclient.StreamEvent) ([]byte, llm.ResponseMeta, error)
 }
 
+// StreamCompleter is an optional interface for inbound transformers that can
+// synthesize the protocol's standard termination events when an upstream stream
+// ends abnormally (mid-stream drop without a termination signal). This is used
+// by the "complete" stream-interruption policy so the client ends cleanly.
+type StreamCompleter interface {
+	// CompletionEvents returns the protocol's standard termination events to
+	// append when the stream ended without one. For OpenAI this is a chunk with
+	// finish_reason="length" plus a [DONE]; for Anthropic this is a message_delta
+	// with stop_reason="max_tokens" and a message_stop; for Gemini this is a
+	// response with candidates[].finishReason="MAX_TOKENS". The slice may be
+	// empty if the transformer has nothing to add.
+	CompletionEvents(ctx context.Context) []*httpclient.StreamEvent
+}
+
 // Outbound represents a transformer that convert the unified Request to the undering provider format.
 // And transform the response from the undering provider format to unified Response format.
 type Outbound interface {

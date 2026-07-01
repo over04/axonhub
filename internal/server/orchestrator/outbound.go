@@ -487,6 +487,42 @@ func (p *PersistentOutboundTransformer) GetCurrentChannel() *biz.Channel {
 	return p.state.CurrentCandidate.Channel
 }
 
+// ResolveStreamInterruption resolves the effective stream-interruption policy
+// for the currently selected channel: channel override wins over the global
+// default. When the channel enables body pass-through, fakeStream/complete are
+// unusable (they require the transform pipeline), so the policy is forced to
+// "none".
+//
+// The fallback default is "none" (not fakeStream/complete): those two policies
+// alter how the upstream stream is delivered to the client (buffering or
+// synthesizing a tail), so they must be opted into explicitly rather than
+// applied silently as a global default.
+func (p *PersistentOutboundTransformer) ResolveStreamInterruption(ctx context.Context) pipeline.StreamInterruptionPolicy {
+	policy := pipeline.StreamInterruptionNone
+	if p.state != nil && p.state.RetryPolicyProvider != nil {
+		if rp := p.state.RetryPolicyProvider.RetryPolicyOrDefault(ctx); rp != nil {
+			policy = pipeline.StreamInterruptionPolicy(rp.StreamInterruptionDefault)
+		}
+	}
+
+	if channel := p.GetCurrentChannel(); channel != nil && channel.Settings != nil {
+		// A non-empty channel override wins; an empty string is treated as
+		// "inherit the global default" (not as fakeStream).
+		if channel.Settings.StreamInterruption != nil && *channel.Settings.StreamInterruption != "" {
+			policy = pipeline.StreamInterruptionPolicy(*channel.Settings.StreamInterruption)
+		}
+		// Pass-through forces "none": fakeStream buffering and complete-event
+		// synthesis both require the transform pipeline, which pass-through skips.
+		if channel.Settings.PassThroughBody != nil && *channel.Settings.PassThroughBody {
+			policy = pipeline.StreamInterruptionNone
+		}
+	}
+
+	return policy
+}
+
+var _ pipeline.StreamInterruptionResolver = (*PersistentOutboundTransformer)(nil)
+
 // GetCurrentModelID returns the current model ID for logging purposes.
 func (p *PersistentOutboundTransformer) GetCurrentModelID() string {
 	if p.state.CurrentCandidate == nil || len(p.state.CurrentCandidate.Models) == 0 {
@@ -588,12 +624,14 @@ func (p *PersistentOutboundTransformer) CanRetry(err error) bool {
 		return false
 	}
 
-	// Empty response detection: allow same-channel retry so the pipeline can
-	// re-execute the request against the same (or next model in the) channel.
+	// Empty response / stream-interruption detection: allow same-channel retry
+	// so the pipeline can re-execute the request against the same (or next model
+	// in the) channel. These all surface before any byte is sent to the client.
 	if errors.Is(err, pipeline.ErrEmptyResponse) ||
 		errors.Is(err, pipeline.ErrEmptyStreamChunks) ||
-		errors.Is(err, pipeline.ErrEmptyAggregatedBody) {
-		log.Debug(context.Background(), "empty response detected",
+		errors.Is(err, pipeline.ErrEmptyAggregatedBody) ||
+		errors.Is(err, pipeline.ErrStreamInterrupted) {
+		log.Debug(context.Background(), "empty response or stream interruption detected",
 			log.Int("channel_id", p.state.CurrentCandidate.Channel.ID),
 		)
 

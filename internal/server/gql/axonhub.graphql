@@ -96,6 +96,7 @@ type ChannelSettings {
   paramOverride: String
   passThroughUserAgent: Boolean
   passThroughBody: Boolean
+  streamInterruption: String
   rateLimit: ChannelRateLimit
   retryableStatusCodes: [Int!]
   retryableErrorPatterns: [RetryableErrorPattern!]
@@ -132,6 +133,7 @@ input ChannelSettingsInput {
   paramOverride: String
   passThroughUserAgent: Boolean
   passThroughBody: Boolean
+  streamInterruption: String
   rateLimit: ChannelRateLimitInput
   retryableStatusCodes: [Int!]
   retryableErrorPatterns: [RetryableErrorPatternInput!]

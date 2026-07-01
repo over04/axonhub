@@ -218,3 +218,33 @@ func (t *InboundTransformer) TransformError(ctx context.Context, rawErr error) *
 		),
 	}
 }
+
+// CompletionEvents synthesizes the Anthropic standard termination events for
+// an abnormally-ended stream: message_delta with stop_reason="max_tokens" +
+// usage, then message_stop.
+//
+// Both events carry their Type field so the SSE writer emits the required
+// "event: message_delta" / "event: message_stop" lines — Anthropic clients
+// (including claude-code) dispatch on the event name, not the JSON type field.
+// message_delta includes a zero-value Usage so consumers relying on
+// message_delta.usage for accounting get a defined shape rather than nil.
+func (t *InboundTransformer) CompletionEvents(ctx context.Context) []*httpclient.StreamEvent {
+	stopReason := "max_tokens"
+	delta := StreamEvent{
+		Type:  "message_delta",
+		Delta: &StreamDelta{StopReason: &stopReason},
+		Usage: &Usage{},
+	}
+	deltaData, err := json.Marshal(delta)
+	if err != nil {
+		// A StreamEvent with standard string/*struct fields cannot fail to
+		// marshal; fall back to a message_stop so the client still gets a
+		// terminal sentinel rather than a truncated stream.
+		return []*httpclient.StreamEvent{{Data: []byte(`{"type":"message_stop"}`)}}
+	}
+	stopData, _ := json.Marshal(StreamEvent{Type: "message_stop"})
+	return []*httpclient.StreamEvent{
+		{Data: deltaData},
+		{Data: stopData},
+	}
+}

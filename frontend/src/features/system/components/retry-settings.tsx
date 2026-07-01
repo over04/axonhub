@@ -13,12 +13,26 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useRetryPolicy, useUpdateRetryPolicy, type RetryPolicyInput } from '../data/system';
 
+// RetryPolicyFormData is the form-state view of RetryPolicyInput with every
+// field required: the form is always populated with concrete values (initial
+// defaults, then the loaded policy), so streamInterruptionDefault and friends
+// are never undefined here. This lets Select value= take a plain string with no
+// `|| 'none'` fallback.
+type RetryPolicyFormData = Required<
+  Omit<RetryPolicyInput, 'upstreamErrorPolicy' | 'autoDisableChannel'>
+> & {
+  upstreamErrorPolicy: Required<NonNullable<RetryPolicyInput['upstreamErrorPolicy']>>;
+  autoDisableChannel: Required<NonNullable<RetryPolicyInput['autoDisableChannel']>> & {
+    statuses: NonNullable<NonNullable<RetryPolicyInput['autoDisableChannel']>['statuses']>;
+  };
+};
+
 export function RetrySettings() {
   const { t } = useTranslation();
   const { data: retryPolicy, isLoading } = useRetryPolicy();
   const updateRetryPolicy = useUpdateRetryPolicy();
 
-  const [formData, setFormData] = useState<RetryPolicyInput>({
+  const [formData, setFormData] = useState<RetryPolicyFormData>({
     enabled: true,
     maxChannelRetries: 3,
     maxSingleChannelRetries: 2,
@@ -27,6 +41,7 @@ export function RetrySettings() {
     nonStreamResponseTimeoutSeconds: 0,
     loadBalancerStrategy: 'adaptive',
     emptyResponseDetection: false,
+    streamInterruptionDefault: 'none',
     upstreamErrorPolicy: {
       mode: 'passthrough',
       customMessage: '',
@@ -48,6 +63,7 @@ export function RetrySettings() {
         nonStreamResponseTimeoutSeconds: retryPolicy.nonStreamResponseTimeoutSeconds,
         loadBalancerStrategy: retryPolicy.loadBalancerStrategy,
         emptyResponseDetection: retryPolicy.emptyResponseDetection,
+        streamInterruptionDefault: retryPolicy.streamInterruptionDefault,
         upstreamErrorPolicy: {
           mode: retryPolicy.upstreamErrorPolicy?.mode || 'passthrough',
           customMessage: retryPolicy.upstreamErrorPolicy?.customMessage || '',
@@ -60,7 +76,7 @@ export function RetrySettings() {
     }
   }, [retryPolicy]);
 
-  const handleInputChange = useCallback((field: keyof RetryPolicyInput, value: string | boolean | number) => {
+  const handleInputChange = useCallback((field: keyof RetryPolicyFormData, value: string | boolean | number) => {
     setFormData((prev) => ({
       ...prev,
       [field]: value,
@@ -385,6 +401,35 @@ export function RetrySettings() {
               </div>
             </div>
           )}
+
+          {/* Stream Interruption Default — applies independently of retry enabled */}
+          <div className='flex items-center justify-between'>
+            <div className='space-y-0.5'>
+              <Label htmlFor='stream-interruption-default' className='text-base'>
+                {t('system.retry.streamInterruptionDefault.label')}
+              </Label>
+              <div className='text-muted-foreground text-sm'>
+                {t('system.retry.streamInterruptionDefault.description')}
+              </div>
+            </div>
+            <Select
+              value={formData.streamInterruptionDefault}
+              onValueChange={(value) => handleInputChange('streamInterruptionDefault', value)}
+            >
+              <SelectTrigger id='stream-interruption-default' className='w-48'>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='none'>{t('system.retry.streamInterruptionDefault.none')}</SelectItem>
+                <SelectItem value='complete'>
+                  {t('system.retry.streamInterruptionDefault.complete')}
+                </SelectItem>
+                <SelectItem value='fakeStream'>
+                  {t('system.retry.streamInterruptionDefault.fakeStream')}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
           <Separator />
 

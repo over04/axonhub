@@ -22,6 +22,12 @@ var ErrEmptyStreamChunks = errors.New("empty stream chunks")
 // ErrEmptyAggregatedBody indicates inbound chunk aggregation produced an empty body.
 var ErrEmptyAggregatedBody = errors.New("empty aggregated body")
 
+// ErrStreamInterrupted is returned when an upstream stream ends abnormally
+// (EOF or transport error) without the protocol's standard termination signal.
+// It is retryable: it surfaces from bufferAndReplayStream before any byte is
+// sent to the client, so the existing retry flow can switch channels.
+var ErrStreamInterrupted = errors.New("upstream stream ended without standard termination signal")
+
 func hasMessageContent(msg *llm.Message) bool {
 	if msg == nil {
 		return false

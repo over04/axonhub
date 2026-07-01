@@ -1,5 +1,7 @@
 package biz
 
+import "github.com/looplj/axonhub/internal/objects"
+
 var defaultStoragePolicy = StoragePolicy{
 	StoreChunks:       false,
 	LivePreview:       false,
@@ -28,6 +30,7 @@ var defaultRetryPolicy = RetryPolicy{
 	UpstreamErrorPolicy: UpstreamErrorPolicy{
 		Mode: UpstreamErrorModePassthrough,
 	},
+	StreamInterruptionDefault: objects.StreamInterruptionNone,
 }
 
 var defaultModelSettings = SystemModelSettings{

@@ -12,6 +12,7 @@ import (
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/streams"
+	"github.com/looplj/axonhub/llm/transformer"
 )
 
 type firstEventTimeoutGuard struct {
@@ -412,3 +413,93 @@ func (p *pipeline) stream(
 
 	return inboundStream, nil
 }
+
+// completingStream wraps an inbound SSE stream and, when the upstream stream
+// ends without the protocol's standard termination signal, appends the
+// termination events produced by the inbound transformer's StreamCompleter.
+// This is the "complete" stream-interruption policy: the client ends cleanly
+// (no error, no retry) but sees a length-capped (max_tokens/length) stop reason
+// rather than the true mid-stream-drop cause.
+type completingStream struct {
+	inner     streams.Stream[*httpclient.StreamEvent]
+	completer transformer.StreamCompleter
+	ctx       context.Context
+
+	sawTermination bool
+	phase          int // 0 = draining inner, 1 = yielding appended events
+	appended       []*httpclient.StreamEvent
+	appendedIdx    int
+}
+
+func newCompletingStream(
+	inner streams.Stream[*httpclient.StreamEvent],
+	completer transformer.StreamCompleter,
+	ctx context.Context,
+) *completingStream {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return &completingStream{
+		inner:     inner,
+		completer: completer,
+		ctx:       ctx,
+	}
+}
+
+// isTerminationChunk reports whether a raw SSE event carries the protocol's
+// terminal signal — the last meaningful event a well-formed stream emits.
+// It mirrors isTerminationSentinel (non_streaming.go): OpenAI [DONE] or
+// finish_reason, Anthropic message_stop, Gemini finishReason. Anthropic
+// stop_reason is intentionally NOT matched: it lives in message_delta, which
+// precedes message_stop, so matching it alone would suppress the synthesized
+// message_stop after a mid-stream drop.
+func isTerminationChunk(data []byte) bool {
+	return isTerminationSentinel(data)
+}
+
+func (s *completingStream) Next() bool {
+	if s.phase == 0 {
+		if s.inner.Next() {
+			if cur := s.inner.Current(); cur != nil && isTerminationChunk(cur.Data) {
+				s.sawTermination = true
+			}
+			return true
+		}
+		// inner ended; transition to phase 1 if we should append
+		s.phase = 1
+		if s.inner.Err() != nil {
+			return false
+		}
+		if s.sawTermination {
+			return false
+		}
+		if s.completer == nil {
+			return false
+		}
+		s.appended = s.completer.CompletionEvents(s.ctx)
+		return s.appendedIdx < len(s.appended)
+	}
+	// phase 1
+	s.appendedIdx++
+	return s.appendedIdx < len(s.appended)
+}
+
+func (s *completingStream) Current() *httpclient.StreamEvent {
+	if s.phase == 0 {
+		return s.inner.Current()
+	}
+	if s.appendedIdx < 0 || s.appendedIdx >= len(s.appended) {
+		return nil
+	}
+	return s.appended[s.appendedIdx]
+}
+
+func (s *completingStream) Err() error {
+	return s.inner.Err()
+}
+
+func (s *completingStream) Close() error {
+	return s.inner.Close()
+}
+
+var _ streams.Stream[*httpclient.StreamEvent] = (*completingStream)(nil)

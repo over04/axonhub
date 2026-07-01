@@ -379,6 +379,9 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
   const [passThroughBody, setPassThroughBody] = useState<boolean | null>(() => {
     return initialRow?.settings?.passThroughBody ?? null;
   });
+  const [streamInterruption, setStreamInterruption] = useState<string | null>(() => {
+    return initialRow?.settings?.streamInterruption ?? null;
+  });
   const [retryableStatusCodesText, setRetryableStatusCodesText] = useState(() =>
     formatRetryableStatusCodes(initialRow?.settings?.retryableStatusCodes)
   );
@@ -1163,6 +1166,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
         const nextSettings = mergeChannelSettingsForUpdate(values.settings, {
           passThroughUserAgent,
           passThroughBody,
+          streamInterruption,
           retryableStatusCodes,
           retryableErrorPatterns,
         });
@@ -1207,6 +1211,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
           proxy: proxyConfig,
           passThroughUserAgent,
           passThroughBody,
+          streamInterruption,
           retryableStatusCodes,
           retryableErrorPatterns,
         });
@@ -1635,6 +1640,7 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
             setProxyPassword(initialRow?.settings?.proxy?.password || '');
             setPassThroughUserAgent(initialRow?.settings?.passThroughUserAgent ?? null);
             setPassThroughBody(initialRow?.settings?.passThroughBody ?? null);
+            setStreamInterruption(initialRow?.settings?.streamInterruption ?? null);
             setRetryableStatusCodesText(formatRetryableStatusCodes(initialRow?.settings?.retryableStatusCodes));
             setRetryableErrorPatternsText(formatRetryableErrorPatterns(initialRow?.settings?.retryableErrorPatterns));
             // Reset provider and API format state
@@ -2552,7 +2558,17 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
                         <div className='space-y-2 md:col-span-6'>
                           <Select
                             value={passThroughBody === null ? 'inherit' : passThroughBody ? 'enabled' : 'disabled'}
-                            onValueChange={(value) => setPassThroughBody(value === 'inherit' ? null : value === 'enabled')}
+                            onValueChange={(value) => {
+                              const enabled = value === 'enabled';
+                              setPassThroughBody(value === 'inherit' ? null : enabled);
+                              // Body pass-through forces the policy to "none" at
+                              // runtime; clear any stale channel override so a
+                              // later pass-through toggle-off inherits the global
+                              // default instead of silently resurrecting it.
+                              if (enabled) {
+                                setStreamInterruption(null);
+                              }
+                            }}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder={t('channels.dialogs.bodyPassThrough.inherit')} />
@@ -2565,6 +2581,34 @@ export function ChannelsActionDialog({ currentRow, duplicateFromRow, open, onOpe
                           </Select>
                           {passThroughBody === true && (
                             <p className='text-xs text-amber-600 dark:text-amber-400'>{t('channels.dialogs.bodyPassThrough.warning')}</p>
+                          )}
+                        </div>
+                      </FormItem>
+
+                      <FormItem className='grid grid-cols-1 items-start gap-x-6 gap-y-2 md:grid-cols-8'>
+                        <FormLabel className='pt-2 font-medium md:col-span-2 md:text-right'>
+                          {t('channels.dialogs.streamInterruption.label')}
+                        </FormLabel>
+                        <div className='space-y-2 md:col-span-6'>
+                          <Select
+                            value={streamInterruption ?? 'inherit'}
+                            onValueChange={(value) => setStreamInterruption(value === 'inherit' ? null : value)}
+                            disabled={passThroughBody === true}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder={t('channels.dialogs.streamInterruption.inherit')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value='inherit'>{t('channels.dialogs.streamInterruption.inherit')}</SelectItem>
+                              <SelectItem value='none'>{t('channels.dialogs.streamInterruption.none')}</SelectItem>
+                              <SelectItem value='complete'>{t('channels.dialogs.streamInterruption.complete')}</SelectItem>
+                              <SelectItem value='fakeStream'>{t('channels.dialogs.streamInterruption.fakeStream')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {passThroughBody === true && (
+                            <p className='text-xs text-muted-foreground'>
+                              {t('channels.dialogs.streamInterruption.passThroughDisabled')}
+                            </p>
                           )}
                         </div>
                       </FormItem>
