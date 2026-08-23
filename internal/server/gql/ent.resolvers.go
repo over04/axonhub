@@ -538,6 +538,19 @@ func (r *requestResolver) DataStorageID(ctx context.Context, obj *ent.Request) (
 	}, nil
 }
 
+// RequestHeaders is the resolver for the requestHeaders field.
+func (r *requestResolver) RequestHeaders(ctx context.Context, obj *ent.Request) (objects.JSONRawMessage, error) {
+	if !biz.CanViewRequestContent(ctx) {
+		return xjson.EmptyJSONRawMessage, nil
+	}
+
+	if obj.RequestHeaders == nil {
+		return xjson.EmptyJSONRawMessage, nil
+	}
+
+	return obj.RequestHeaders, nil
+}
+
 // RequestBody is the resolver for the requestBody field.
 func (r *requestResolver) RequestBody(ctx context.Context, obj *ent.Request) (objects.JSONRawMessage, error) {
 	value, err := r.requestService.LoadRequestBody(ctx, obj)
@@ -970,23 +983,3 @@ type usageLogResolver struct{ *Resolver }
 type userResolver struct{ *Resolver }
 type userProjectResolver struct{ *Resolver }
 type userRoleResolver struct{ *Resolver }
-
-// !!! WARNING !!!
-// The code below was going to be deleted when updating resolvers. It has been copied here so you have
-// one last chance to move it out of harms way if you want. There are two reasons this happens:
-//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
-//    it when you're done.
-//  - You have helper methods in this file. Move them out to keep these resolver files clean.
-/*
-	func (r *requestResolver) RequestHeaders(ctx context.Context, obj *ent.Request) (objects.JSONRawMessage, error) {
-	if !biz.CanViewRequestContent(ctx) {
-		return xjson.EmptyJSONRawMessage, nil
-	}
-
-	if obj.RequestHeaders == nil {
-		return xjson.EmptyJSONRawMessage, nil
-	}
-
-	return obj.RequestHeaders, nil
-}
-*/

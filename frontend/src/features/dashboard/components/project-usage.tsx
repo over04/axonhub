@@ -197,9 +197,9 @@ export function ProjectUsage() {
                 tickMargin={8}
               />
               <Tooltip
-                formatter={(value: number | string, name: string) => [
+                formatter={(value: unknown, name: unknown) => [
                   formatNumber(Number(value)),
-                  name,
+                  String(name),
                 ]}
                 contentStyle={{
                   backgroundColor: 'var(--background)',

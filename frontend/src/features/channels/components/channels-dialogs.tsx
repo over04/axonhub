@@ -20,7 +20,6 @@ import { ChannelsProxyDialog } from './channels-proxy-dialog';
 import { ChannelsRateLimitDialog } from './channels-rate-limit-dialog';
 import { ChannelsStatusDialog } from './channels-status-dialog';
 import { ChannelsSystemSettingsDialog } from './channels-system-settings-dialog';
-import { ChannelsTestAPIKeysDialog } from './channels-test-api-keys-dialog';
 import { ChannelsTestDialog } from './channels-test-dialog';
 import { ChannelsTestHistoryDrawer } from './channels-test-history-drawer';
 import { ChannelsAPIKeyManagementDialog } from './channels-api-key-management-dialog';

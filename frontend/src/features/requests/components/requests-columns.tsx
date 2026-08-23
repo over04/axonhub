@@ -52,7 +52,6 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
   const { data: securitySettings } = useSecuritySettings(canManageSecuritySettings);
   const updateSecuritySettings = useUpdateSecuritySettings();
   const { navigateWithSearch } = usePaginationSearch({ defaultPageSize: 20 });
-  const [displayMode, setDisplayMode] = useDisplayMode();
 
   const blockedIPs = securitySettings?.blockedIPs ?? [];
   const showIPBanIcon = securitySettings?.showRequestLogIPBanIcon === true;

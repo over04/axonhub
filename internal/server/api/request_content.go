@@ -67,6 +67,14 @@ func (h *RequestContentHandlers) DownloadRequestContent(c *gin.Context) {
 		return
 	}
 
+	// Fork content-isolation: registered non-owner users may not download raw
+	// request content even for requests they can read. System-internal callers
+	// (no user in context) and the system owner are allowed.
+	if !biz.CanViewRequestContent(ctx) {
+		JSONError(c, http.StatusForbidden, errors.New("Not allowed to view request content"))
+		return
+	}
+
 	if !req.ContentSaved || req.ContentStorageID == nil || req.ContentStorageKey == nil || strings.TrimSpace(*req.ContentStorageKey) == "" {
 		JSONError(c, http.StatusNotFound, errors.New("Content not found"))
 		return

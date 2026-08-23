@@ -2394,6 +2394,7 @@ type RequestResolver interface {
 	TraceID(ctx context.Context, obj *ent.Request) (*objects.GUID, error)
 	DataStorageID(ctx context.Context, obj *ent.Request) (*objects.GUID, error)
 
+	RequestHeaders(ctx context.Context, obj *ent.Request) (objects.JSONRawMessage, error)
 	RequestBody(ctx context.Context, obj *ent.Request) (objects.JSONRawMessage, error)
 	ResponseBody(ctx context.Context, obj *ent.Request) (objects.JSONRawMessage, error)
 	ResponseChunks(ctx context.Context, obj *ent.Request) ([]objects.JSONRawMessage, error)
@@ -46565,7 +46566,7 @@ func (ec *executionContext) _Request_requestHeaders(ctx context.Context, field g
 		field,
 		ec.fieldContext_Request_requestHeaders,
 		func(ctx context.Context) (any, error) {
-			return obj.RequestHeaders, nil
+			return ec.resolvers.Request().RequestHeaders(ctx, obj)
 		},
 		nil,
 		ec.marshalOJSONRawMessage2githubᚗcomᚋloopljᚋaxonhubᚋinternalᚋobjectsᚐJSONRawMessage,
@@ -46578,8 +46579,8 @@ func (ec *executionContext) fieldContext_Request_requestHeaders(_ context.Contex
 	fc = &graphql.FieldContext{
 		Object:     "Request",
 		Field:      field,
-		IsMethod:   false,
-		IsResolver: false,
+		IsMethod:   true,
+		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type JSONRawMessage does not have child fields")
 		},
@@ -100248,7 +100249,38 @@ func (ec *executionContext) _Request(ctx context.Context, sel ast.SelectionSet, 
 				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "requestHeaders":
-			out.Values[i] = ec._Request_requestHeaders(ctx, field, obj)
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Request_requestHeaders(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "requestBody":
 			field := field
 

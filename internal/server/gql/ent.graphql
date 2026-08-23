@@ -4203,7 +4203,7 @@ type Request implements Node {
   """
   Request headers
   """
-  requestHeaders: JSONRawMessage
+  requestHeaders: JSONRawMessage @goField(forceResolver: true)
   requestBody: JSONRawMessage! @goField(forceResolver: true)
   responseBody: JSONRawMessage @goField(forceResolver: true)
   responseChunks: [JSONRawMessage!] @goField(forceResolver: true)

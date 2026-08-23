@@ -667,47 +667,6 @@ func (r *quotaEnforcementSettingsResolver) AllowedChannelIDs(ctx context.Context
 
 // StreamInterruptionDefault is the resolver for the streamInterruptionDefault field.
 func (r *retryPolicyResolver) StreamInterruptionDefault(ctx context.Context, obj *biz.RetryPolicy) (string, error) {
-	panic(fmt.Errorf("not implemented: StreamInterruptionDefault - streamInterruptionDefault"))
-}
-
-// StreamInterruptionDefault is the resolver for the streamInterruptionDefault field.
-func (r *updateRetryPolicyInputResolver) StreamInterruptionDefault(ctx context.Context, obj *biz.RetryPolicy, data *string) error {
-	panic(fmt.Errorf("not implemented: StreamInterruptionDefault - streamInterruptionDefault"))
-}
-
-// ProviderQuotaCollectionSettings returns ProviderQuotaCollectionSettingsResolver implementation.
-func (r *Resolver) ProviderQuotaCollectionSettings() ProviderQuotaCollectionSettingsResolver {
-	return &providerQuotaCollectionSettingsResolver{r}
-}
-
-// QuotaEnforcementSettings returns QuotaEnforcementSettingsResolver implementation.
-func (r *Resolver) QuotaEnforcementSettings() QuotaEnforcementSettingsResolver {
-	return &quotaEnforcementSettingsResolver{r}
-}
-
-// RetryPolicy returns RetryPolicyResolver implementation.
-func (r *Resolver) RetryPolicy() RetryPolicyResolver { return &retryPolicyResolver{r} }
-
-// UpdateRetryPolicyInput returns UpdateRetryPolicyInputResolver implementation.
-func (r *Resolver) UpdateRetryPolicyInput() UpdateRetryPolicyInputResolver {
-	return &updateRetryPolicyInputResolver{r}
-}
-
-type providerQuotaCollectionSettingsResolver struct{ *Resolver }
-type quotaEnforcementSettingsResolver struct{ *Resolver }
-type retryPolicyResolver struct{ *Resolver }
-type updateRetryPolicyInputResolver struct{ *Resolver }
-
-// !!! WARNING !!!
-// The code below was going to be deleted when updating resolvers. It has been copied here so you have
-// one last chance to move it out of harms way if you want. There are two reasons this happens:
-//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
-//    it when you're done.
-//  - You have helper methods in this file. Move them out to keep these resolver files clean.
-/*
-	<<<<<<< HEAD
-// StreamInterruptionDefault is the resolver for the streamInterruptionDefault field.
-func (r *retryPolicyResolver) StreamInterruptionDefault(ctx context.Context, obj *biz.RetryPolicy) (string, error) {
 	if obj == nil {
 		return string(objects.StreamInterruptionNone), nil
 	}
@@ -734,6 +693,16 @@ func (r *updateRetryPolicyInputResolver) StreamInterruptionDefault(ctx context.C
 	}
 }
 
+// ProviderQuotaCollectionSettings returns ProviderQuotaCollectionSettingsResolver implementation.
+func (r *Resolver) ProviderQuotaCollectionSettings() ProviderQuotaCollectionSettingsResolver {
+	return &providerQuotaCollectionSettingsResolver{r}
+}
+
+// QuotaEnforcementSettings returns QuotaEnforcementSettingsResolver implementation.
+func (r *Resolver) QuotaEnforcementSettings() QuotaEnforcementSettingsResolver {
+	return &quotaEnforcementSettingsResolver{r}
+}
+
 // RetryPolicy returns RetryPolicyResolver implementation.
 func (r *Resolver) RetryPolicy() RetryPolicyResolver { return &retryPolicyResolver{r} }
 
@@ -741,4 +710,8 @@ func (r *Resolver) RetryPolicy() RetryPolicyResolver { return &retryPolicyResolv
 func (r *Resolver) UpdateRetryPolicyInput() UpdateRetryPolicyInputResolver {
 	return &updateRetryPolicyInputResolver{r}
 }
-*/
+
+type providerQuotaCollectionSettingsResolver struct{ *Resolver }
+type quotaEnforcementSettingsResolver struct{ *Resolver }
+type retryPolicyResolver struct{ *Resolver }
+type updateRetryPolicyInputResolver struct{ *Resolver }

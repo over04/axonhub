@@ -197,7 +197,9 @@ func applyOverrideRequestBody(outbound *PersistentOutboundTransformer) pipeline.
 		// Applying them to a multipart body (image edit/variation, transcription,
 		// ...) would replace the whole payload with a tiny JSON object while the
 		// Content-Type still advertises the multipart boundary, so the upstream
-		// sees a truncated form. Skip body override for non-JSON bodies.
+		// sees a truncated form. Skip body override for non-JSON bodies, but keep
+		// executing header-only operations (set_header/pass_headers/...) which do
+		// not depend on the body.
 		if !bodyOverrideSupported(request) {
 			log.Warn(ctx, "skipping body override operations for non-JSON request body",
 				log.String("channel", channel.Name),
@@ -205,6 +207,12 @@ func applyOverrideRequestBody(outbound *PersistentOutboundTransformer) pipeline.
 				log.String("content_type", requestContentType(request)),
 				log.String("api_format", request.APIFormat),
 			)
+
+			overrideCtx := buildParamOverrideContext(ctx, outbound, request)
+			if err := applyHeaderOnlyOperations(request, paramOverride, overrideCtx); err != nil {
+				return nil, openAIParamOverrideHTTPError(err)
+			}
+			applyRuntimeRequestHeadersFromContext(request, overrideCtx)
 
 			return request, nil
 		}
@@ -267,20 +275,32 @@ func requestContentType(request *httpclient.Request) string {
 // bodyOverrideSupported reports whether channel body override operations can
 // safely be applied to this request. gjson/sjson discard non-JSON documents,
 // so multipart (image edit/variation, transcription, ...) and other non-JSON
-// bodies must skip body override to avoid truncating the payload.
+// bodies must skip body override to avoid truncating the payload. Mirrors the
+// upstream semantics: an empty body, an explicit non-JSON content type, or a
+// body that is not valid JSON all disable body override.
 func bodyOverrideSupported(request *httpclient.Request) bool {
-	contentType := requestContentType(request)
-	if contentType == "" {
-		// Unknown content type: assume JSON (the historical behavior).
-		return true
-	}
-
-	mediaType, _, err := mime.ParseMediaType(contentType)
-	if err != nil {
+	if request == nil || len(request.Body) == 0 {
 		return false
 	}
 
-	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
+	contentType := requestContentType(request)
+	if contentType != "" {
+		mediaType, _, err := mime.ParseMediaType(contentType)
+		if err == nil && !isJSONMediaType(mediaType) {
+			return false
+		}
+	}
+
+	return gjson.ValidBytes(request.Body)
+}
+
+// isJSONMediaType reports whether the media type is a JSON document type.
+func isJSONMediaType(mediaType string) bool {
+	mediaType = strings.ToLower(mediaType)
+
+	return mediaType == "application/json" ||
+		mediaType == "text/json" ||
+		strings.HasSuffix(mediaType, "+json")
 }
 
 func applyOverrideRequestHeaders(outbound *PersistentOutboundTransformer) pipeline.Middleware {
@@ -341,6 +361,48 @@ func applyParamOverride(jsonData []byte, paramOverride map[string]any, condition
 	}
 
 	return nil, fmt.Errorf("param override operations are required")
+}
+
+// isHeaderOnlyOperation reports whether the operation mode only touches
+// outbound request headers and never the request body.
+func isHeaderOnlyOperation(mode string) bool {
+	switch mode {
+	case "set_header", "delete_header", "copy_header", "move_header", "pass_headers", "sync_fields":
+		return true
+	default:
+		return false
+	}
+}
+
+// applyHeaderOnlyOperations executes only the header-only operations of a param
+// override configuration against the given request. It is used when the request
+// body is not JSON (multipart image/audio uploads): body operations must be
+// skipped, but header manipulation (set_header, pass_headers, ...) still
+// applies. Conditions are evaluated against the raw body; for a non-JSON body
+// the condition paths simply do not exist (PassMissingKey semantics).
+func applyHeaderOnlyOperations(request *httpclient.Request, paramOverride map[string]any, conditionContext map[string]any) error {
+	if len(paramOverride) == 0 {
+		return nil
+	}
+
+	operations, ok := tryParseOperations(paramOverride)
+	if !ok {
+		return fmt.Errorf("param override operations are required")
+	}
+
+	filtered := make([]paramOperation, 0, len(operations))
+	for _, op := range operations {
+		if isHeaderOnlyOperation(strings.TrimSpace(op.Mode)) {
+			filtered = append(filtered, op)
+		}
+	}
+
+	if len(filtered) == 0 {
+		return nil
+	}
+
+	_, err := applyOperations(request.Body, filtered, conditionContext)
+	return err
 }
 
 func tryParseOperations(paramOverride map[string]any) ([]paramOperation, bool) {
@@ -895,7 +957,11 @@ func compareEqual(jsonValue, targetValue gjson.Result) (bool, error) {
 		return jsonValue.Bool() == targetValue.Bool(), nil
 	}
 	if jsonValue.Type != targetValue.Type {
-		return false, fmt.Errorf("compare for different types")
+		// Cross-type comparison (e.g. document number 123 vs condition value
+		// "123") is treated as "not equal" rather than an error, mirroring the
+		// upstream template engine's eq semantics — a single mistyped condition
+		// must not take down every request on the channel.
+		return false, nil
 	}
 	switch jsonValue.Type {
 	case gjson.Number:
@@ -1092,8 +1158,13 @@ func modifyArray(data []byte, path string, value any, prepend bool) ([]byte, err
 // no-op.
 func applyBodyArrayRemove(data []byte, path string, match *paramOverrideMatch) ([]byte, error) {
 	current := gjson.GetBytes(data, path)
-	if !current.IsArray() || match == nil || strings.TrimSpace(match.Path) == "" {
-		return data, nil
+	if match == nil || strings.TrimSpace(match.Path) == "" {
+		return data, fmt.Errorf("array_remove requires a match with path and eq")
+	}
+	if !current.IsArray() {
+		// A non-array target is a runtime schema drift, not a configuration
+		// error: surface it so operators notice the filter is not applied.
+		return data, fmt.Errorf("array_remove target path %q is not an array", path)
 	}
 
 	next := make([]any, 0, current.Get("#").Int())
@@ -1108,8 +1179,8 @@ func applyBodyArrayRemove(data []byte, path string, match *paramOverrideMatch) (
 }
 
 // arrayItemMatches reports whether the array item's field at match.Path equals
-// match.Eq. Values are compared as strings, mirroring the upstream eq matcher;
-// a missing field never matches.
+// match.Eq. Values are compared as strings, mirroring the upstream eq matcher
+// ("5" matches 5, 1.0 matches 1); a missing field never matches.
 func arrayItemMatches(item gjson.Result, match *paramOverrideMatch) bool {
 	if !item.IsObject() {
 		return false
@@ -1118,27 +1189,7 @@ func arrayItemMatches(item gjson.Result, match *paramOverrideMatch) bool {
 	if !field.Exists() || field.Type == gjson.Null {
 		return false
 	}
-	return field.Raw == valueToRawEqual(match.Eq)
-}
-
-// valueToRawEqual renders a scalar match.Eq the way gjson.Raw presents a JSON
-// scalar, so equality comparisons are stable across string/number/bool.
-func valueToRawEqual(v any) string {
-	switch t := v.(type) {
-	case string:
-		b, _ := json.Marshal(t)
-		return string(b)
-	case float64:
-		return strconv.FormatFloat(t, 'f', -1, 64)
-	case bool:
-		if t {
-			return "true"
-		}
-		return "false"
-	default:
-		b, _ := json.Marshal(v)
-		return string(b)
-	}
+	return strings.TrimSpace(field.String()) == strings.TrimSpace(fmt.Sprint(match.Eq))
 }
 
 func trimStringValue(data []byte, path string, value any, prefix bool) ([]byte, error) {

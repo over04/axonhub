@@ -1149,7 +1149,7 @@ export function useGeneralSettings(enabled = true) {
 
   return useQuery({
     queryKey: ['generalSettings'],
-    enabled: hasSystemScope('read_settings'),
+    enabled: enabled && hasSystemScope('read_settings'),
     queryFn: async () => {
       try {
         const data = await graphqlRequest<{ systemGeneralSettings: SystemGeneralSettings }>(SYSTEM_GENERAL_SETTINGS_QUERY);
@@ -1163,7 +1163,6 @@ export function useGeneralSettings(enabled = true) {
         throw error;
       }
     },
-    enabled,
     placeholderData: (previousData) => previousData,
   });
 }
@@ -1263,7 +1262,7 @@ export function useSecuritySettings(enabled = true) {
 
   return useQuery({
     queryKey: ['securitySettings'],
-    enabled: hasSystemScope('read_settings'),
+    enabled: enabled && hasSystemScope('read_settings'),
     queryFn: async () => {
       try {
         const data = await graphqlRequest<{ securitySettings: SecuritySettings }>(SECURITY_SETTINGS_QUERY);
@@ -1273,7 +1272,6 @@ export function useSecuritySettings(enabled = true) {
         throw error;
       }
     },
-    enabled,
   });
 }
 
@@ -1794,7 +1792,7 @@ export function useQuotaEnforcementSettings(enabled = true) {
 
   return useQuery({
     queryKey: ['quotaEnforcementSettings'],
-    enabled: hasSystemScope('read_settings'),
+    enabled: enabled && hasSystemScope('read_settings'),
     queryFn: async () => {
       try {
         const data = await graphqlRequest<{ quotaEnforcementSettings: QuotaEnforcementSettings }>(QUOTA_ENFORCEMENT_SETTINGS_QUERY);
@@ -1804,7 +1802,6 @@ export function useQuotaEnforcementSettings(enabled = true) {
         throw error;
       }
     },
-    enabled,
   });
 }
 

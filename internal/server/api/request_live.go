@@ -124,6 +124,14 @@ func (h *RequestPreviewHandlers) PreviewRequest(c *gin.Context) {
 		return
 	}
 
+	// Fork content-isolation: registered non-owner users may not preview raw
+	// request content (live buffer or static chunks). System-internal callers
+	// (no user in context) and the system owner are allowed.
+	if !biz.CanViewRequestContent(ctx) {
+		JSONError(c, http.StatusForbidden, errors.New("Not allowed to view request content"))
+		return
+	}
+
 	if req.Status != request.StatusProcessing || !req.Stream {
 		h.writeStaticPreview(c, req)
 		return

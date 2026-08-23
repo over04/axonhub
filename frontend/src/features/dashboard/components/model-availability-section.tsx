@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ColumnDef,
@@ -54,7 +54,9 @@ export function ModelAvailabilitySection() {
       cell: ({ row }) => {
         const m = row.original;
         const iconName = resolveModelIcon(m.icon, m.modelId);
-        const IconComponent = iconName && Icons[iconName as keyof typeof Icons];
+        const IconComponent = iconName
+          ? (Icons[iconName as keyof typeof Icons] as ComponentType<{ className?: string }>)
+          : null;
         return (
           <div className='flex items-center justify-center gap-2'>
             {IconComponent ? (
