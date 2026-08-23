@@ -14,47 +14,114 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/looplj/axonhub?logo=go&logoColor=white)](https://golang.org/)
 [![Docker Ready](https://img.shields.io/badge/docker-ready-2496ED?logo=docker&logoColor=white)](https://docker.com)
 
-[English](README.md) | [中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
+[English](README.en-US.md) | [中文](README.md) | [日本語](README.ja-JP.md)
 
 </div>
+
+---
 
 ## ❤️ スポンサー
 
 <div align="center">
 
-<a href="https://lj.s.gy/oZl7Vd" target="_blank"><img src="docs/sponsors/atlas-cloud-logomark-black.svg" alt="Atlas Cloud" height="40"/></a>&nbsp;&nbsp;<a href="https://lj.s.gy/oZl7Vd" target="_blank"><img src="docs/sponsors/atlas-cloud-logo-black.svg" alt="Atlas Cloud" height="40"/></a>
-
-**[Atlas Cloud](https://lj.s.gy/oZl7Vd)** は、開発者に動画生成、画像生成、LLM API へアクセスできる単一の AI API を提供するフルモーダル AI 推論プラットフォームです。複数のベンダー統合を管理する代わりに、一度接続するだけで全モーダルにわたる 300 以上の厳選されたモデルへ統一アクセスできます。
-
-Atlas Cloud の[新しいコーディングプラン特典](https://lj.s.gy/jknt2V)で、よりお得な API アクセスをご利用ください。
+<table width="100%">
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <a href="https://lj.s.gy/oZl7Vd" target="_blank">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="docs/sponsors/atlas-cloud-logomark-white.svg"/>
+          <source media="(prefers-color-scheme: light)" srcset="docs/sponsors/atlas-cloud-logomark-black.svg"/>
+          <img src="docs/sponsors/atlas-cloud-logomark-black.svg" alt="Atlas Cloud" height="50"/>
+        </picture>
+        <br/>
+        <strong>Atlas Cloud</strong>
+      </a>
+      <p align="left">
+        <a href="https://lj.s.gy/oZl7Vd" target="_blank">Atlas Cloud</a> は、開発者に動画生成、画像生成、LLM API へアクセスできる単一の AI API を提供するフルモーダル AI 推論プラットフォームです。複数のベンダー統合を管理する代わりに、一度接続するだけで全モーダルにわたる 300 以上の厳選されたモデルへ統一アクセスできます。
+      </p>
+      <p align="left">
+        Atlas Cloud の <a href="https://lj.s.gy/jknt2V" target="_blank">新しいコーディングプラン特典</a> で、よりお得な API アクセスをご利用ください。
+      </p>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <a href="https://lj.s.gy/DUq59H" target="_blank">
+        <img src="https://www.infistar.cc/logo.png" alt="無限星河 Infistar.cc" height="50"/>
+        <br/>
+        <strong>無限星河 Infistar.cc</strong>
+      </a>
+      <p align="center">
+        <a href="https://lj.s.gy/DUq59H" target="_blank">
+          <img src="docs/sponsors/infistar-banner.png" alt="Infistar.cc 無限星河" width="100%"/>
+        </a>
+      </p>
+      <p align="left">
+        <strong>AxonHub × Infistar.cc 無限星河｜高可用な全モデル API · 次世代 AI ゲートウェイとマルチチャネルルーティングを支援</strong><br/><br/>
+        Infistar.cc 無限星河による本プロジェクトへのご支援に感謝します！
+      </p>
+      <p align="left">
+        ⚡ エンタープライズ級の高い同時実行性能と安定したスケジューリング：公式価格の 1 割から利用でき、モデル倍率も公開・透明です。ミリ秒級の応答で AxonHub のインテリジェントルーティングとフェイルオーバーに最適化されています。高可用性チャネルとマルチノード冗長バックアップにより、レート制限、429、接続切断の問題を解消します；<br/>
+        🧠 トップモデルを全面サポート：ChatGPT、Claude、Gemini、Kimi、GLM、DeepSeek など主要モデル全般に対応し、Claude Code、Codex、OpenCode などの AI プログラミングおよび Agent 開発ツールもネイティブサポートします。<br/>
+        🎨 マルチモーダルと最先端エコシステムへの接続：テキスト対話やコード生成だけでなく、主要な画像生成、動画、Embedding、Rerank モデルにもワンストップで接続でき、1 つの上流チャネルでゲートウェイのマルチモーダル配信ニーズに対応します。<br/>
+        🎁 AxonHub ユーザー限定特典：<a href="https://lj.s.gy/DUq59H" target="_blank">専用リンク</a>から登録すると、[専用付与クレジット / 初回チャージ特典]を受け取れます。すぐに利用でき、ゲートウェイのテストにも簡単に接続できます！
+      </p>
+    </td>
+  </tr>
+</table>
 
 </div>
 
-<br />
+<br/>
 
 <table border="1" cellspacing="0" cellpadding="16">
   <thead>
     <tr>
-      <th align="center" width="220">Sponsor</th>
-      <th align="left">Description</th>
+      <th align="center" width="220">スポンサー</th>
+      <th align="left">説明</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <td align="center" valign="middle">
-        <a href="https://bloome.im/" target="_blank">
-         <strong>Bloome</strong>
-          <img src="docs/sponsors/bloome.png" alt="Bloome" height="90" />
+        <a href="https://lj.s.gy/8HNo22" target="_blank">
+          <img src="https://www-static.qbox.me/_next/static/media/logo.0fc18feaa621d2068a7180631f742256.jpg" alt="七牛云 AI" height="90"/>
+          <br/>
+          <strong>七牛云 AI</strong>
+        </a>
+      </td>
+      <td valign="middle">
+        七牛云 AI は七牛云（02567.HK）傘下の企業向け大規模モデル MaaS プラットフォームです。世界中の 150 以上の主要モデルをワンストップで利用でき、主要なモデルプロバイダーのプロトコルに対応しています。テキスト、画像、音声、動画、ファイル処理など、あらゆるモダリティに対応し、169 万を超える企業・開発者にサービスを提供しています。AxonHub ユーザー限定特典として、<a href="https://lj.s.gy/8HNo22" target="_blank">こちらのリンクから登録</a>すると、企業ユーザーは 1,200 万トークン、開発者は 300 万トークンを無料で受け取れます。
+      </td>
+    </tr>
+    <tr>
+      <td align="center" valign="middle">
+        <a href="https://lj.s.gy/Wo8IuN" target="_blank">
+          <img src="https://api.fenno.ai/branding/standard/icon.webp" alt="FennoAI" height="90"/>
+          <br/>
+          <strong>FennoAI</strong>
+        </a>
+      </td>
+      <td valign="middle">
+        FennoAI は、企業の研究開発チームと開発者向けに、高い安定性と性能を提供する API 中継サービスです。OpenAI および Anthropic プロトコルに対応し、Codex、Claude Code、OpenCode など主要な AI コーディングツールにシームレスに接続できます。1 日あたり数千億トークン規模の利用を支える企業向けの安定性を備え、国内外の事業主体間の決済や請求書発行にも対応しています。AxonHub ユーザー限定特典として、<a href="https://lj.s.gy/Wo8IuN" target="_blank">専用リンクからサブスクリプションを購入</a>すると、わずか 1.99 ドルで 50 ドル相当の Coding Plan クレジットを利用できます。紹介報酬にも対応しており、友人の購入で最大 20% のコミッションを獲得できます。
+      </td>
+    </tr>
+    <tr>
+      <td align="center" valign="middle">
+        <a href="https://bloome.im/app?ref=MjgMzmCY&utm_medium=github&utm_source=looplj-axonhub-ivor-202606" target="_blank">
+          <img src="docs/sponsors/bloome.png" alt="Bloome" height="90"/>
+          <br/>
+          <strong>Bloome</strong>
         </a>
       </td>
       <td valign="middle">
         AxonHub をローカルセットアップなしで試すなら、Bloome で：
-        <a href="https://bloome.im/agent/join/WchosTFN?ref=MjgMzmCY" target="_blank">Quick start</a>,
+        <a href="https://bloome.im/app?ref=MjgMzmCY&utm_medium=github&utm_source=looplj-axonhub-ivor-202606" target="_blank">Quick start</a>、
         ブラウザやスマートフォンからワンクリックで起動でき、チームにも簡単に共有できます。
       </td>
     </tr>
   </tbody>
 </table>
+
+---
 
 ---
 
@@ -349,15 +416,19 @@ AXONHUB_LOG_LEVEL=info
 git clone https://github.com/looplj/axonhub.git
 cd axonhub
 
-# 環境変数を設定
-export AXONHUB_DB_DIALECT="tidb"
-export AXONHUB_DB_DSN="<USER>.root:<PASSWORD>@tcp(gateway01.us-west-2.prod.aws.tidbcloud.com:4000)/axonhub?tls=true&parseTime=true&multiStatements=true&charset=utf8mb4"
+# ローカル環境ファイルを作成（イメージの digest とパスワードを置き換えてください）
+umask 077
+cat > .env <<'EOF'
+DB_PASSWORD=replace-with-a-long-random-password
+AXONHUB_IMAGE=looplj/axonhub@sha256:replace-with-axonhub-digest
+POSTGRES_IMAGE=postgres@sha256:replace-with-postgres-digest
+EOF
 
 # サービスを開始
-docker-compose up -d
+docker compose --env-file .env up -d
 
 # ステータスを確認
-docker-compose ps
+docker compose ps
 ```
 
 #### Helm Kubernetesデプロイ

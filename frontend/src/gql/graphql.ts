@@ -41,17 +41,16 @@ function isForbiddenGraphQLError(error: any): boolean {
   return error?.extensions?.code === 'FORBIDDEN' || error?.message?.toLowerCase().includes('permission denied');
 }
 
-function isUnauthorizedGraphQLError(error: any): boolean {
-  const message = error?.message?.toLowerCase() ?? '';
-
-  return error?.extensions?.code === 'UNAUTHENTICATED' || message.includes('unauthorized') || message.includes('unauthenticated');
+export function isUnauthorizedGraphQLError(error: any): boolean {
+  return error?.extensions?.code === 'UNAUTHENTICATED';
 }
 
 // GraphQL client function with token support
 export async function graphqlRequest<T>(
   query: string,
   variables?: Record<string, any>,
-  customHeaders?: Record<string, string>
+  customHeaders?: Record<string, string>,
+  init?: { signal?: AbortSignal }
 ): Promise<T> {
   // Get token from localStorage
   const token = getTokenFromStorage();
@@ -79,6 +78,7 @@ export async function graphqlRequest<T>(
     response = await fetch(GRAPHQL_ENDPOINT, {
       method: 'POST',
       headers,
+      signal: init?.signal,
       body: JSON.stringify({
         query,
         variables,
@@ -86,16 +86,24 @@ export async function graphqlRequest<T>(
       }),
     });
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
     throw new GraphQLRequestError('Network error', { status: undefined, isAuthError: false });
   }
 
-  // Handle explicit auth failures
-  if (response.status === 401 || response.status === 403) {
+  // Handle explicit auth failures (401 only — 403 is a permission denial, not a session issue)
+  if (response.status === 401) {
     // Clear token and redirect to login
     removeTokenFromStorage();
     toast.error(i18n.t('common.errors.sessionExpiredSignIn'));
     window.location.href = '/sign-in';
     throw new GraphQLRequestError('Unauthorized', { status: response.status, isAuthError: true });
+  }
+
+  // Handle permission denial — do NOT clear token or redirect
+  if (response.status === 403) {
+    throw new GraphQLRequestError('Forbidden', { status: 403, isAuthError: false });
   }
 
   // Check content type before parsing JSON
@@ -109,7 +117,7 @@ export async function graphqlRequest<T>(
   let result;
   try {
     result = await response.json();
-  } catch (error) {
+  } catch (_error) {
     throw new GraphQLRequestError('Failed to parse server response as JSON', {
       status: response.status,
     });

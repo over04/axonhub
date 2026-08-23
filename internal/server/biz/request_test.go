@@ -15,8 +15,8 @@ import (
 )
 
 func TestCanViewRequestContent(t *testing.T) {
-	// 无 user → false
-	require.False(t, CanViewRequestContent(context.Background()))
+	// 无 user（系统内部调用：GC、备份等）→ true
+	require.True(t, CanViewRequestContent(context.Background()))
 
 	// 非 owner 注册用户 → false
 	regularUser := &ent.User{IsOwner: false}

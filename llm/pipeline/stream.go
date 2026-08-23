@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -26,6 +27,12 @@ const (
 	firstEventPending uint32 = iota
 	firstEventCompleted
 	firstEventTimedOut
+)
+
+const (
+	maxPreReadEvents           = 3
+	maxPreCommitBufferedEvents = 1024
+	maxPreCommitBufferedBytes  = 8 * 1024 * 1024
 )
 
 func newFirstEventTimeoutGuard(ctx context.Context, timeout time.Duration) (context.Context, *firstEventTimeoutGuard) {
@@ -147,8 +154,24 @@ func hasFinishReason(resp *llm.Response) bool {
 	return false
 }
 
+func isTerminalLlmStreamEvent(resp *llm.Response) bool {
+	return resp == llm.DoneResponse || (resp != nil && resp.Object == "[DONE]") || hasFinishReason(resp)
+}
+
+func (p *pipeline) hasStreamRetryBudget() bool {
+	return p.maxSameChannelRetries > 0 || p.maxChannelRetries > 0
+}
+
+func shouldWrapPreReadStreamError(err error) bool {
+	return !errors.Is(err, ErrStreamFirstEventTimeout) &&
+		!errors.Is(err, ErrEmptyResponse) &&
+		!errors.Is(err, context.Canceled) &&
+		!errors.Is(err, context.DeadlineExceeded)
+}
+
 // preReadLlmStream reads the initial LLM stream events so the pipeline can
-// enforce first-event timeout and, when enabled, detect empty responses.
+// enforce first-event timeout, detect empty responses, and keep retryable stream
+// failures inside the pipeline until the first meaningful response content.
 // If the stream contains content, it returns a new stream with the pre-read events prepended.
 // If the stream is empty (finish reason reached without content), it returns ErrEmptyResponse.
 func (p *pipeline) preReadLlmStream(
@@ -156,15 +179,13 @@ func (p *pipeline) preReadLlmStream(
 	llmStream streams.Stream[*llm.Response],
 	firstEventGuard *firstEventTimeoutGuard,
 ) (streams.Stream[*llm.Response], error) {
-	const maxPreReadEvents = 3
-	preReadLimit := maxPreReadEvents
-	if !p.emptyResponseDetection {
-		preReadLimit = 1
-	}
+	preReadUntilContent := p.hasStreamRetryBudget()
+	probeLimit := maxPreReadEvents
 
 	var buffered []*llm.Response
+	bufferedBytes := 0
 
-	for i := range preReadLimit {
+	for i := 0; ; i++ {
 		hasNext, err := nextLlmStreamEvent(ctx, llmStream, i == 0, firstEventGuard)
 		if err != nil {
 			llmStream.Close()
@@ -176,14 +197,30 @@ func (p *pipeline) preReadLlmStream(
 		}
 
 		event := llmStream.Current()
-		buffered = append(buffered, event)
+		if hasResponseContent(event) {
+			// Meaningful output commits the attempt immediately. Do not apply the
+			// private metadata budget to legitimate large media/audio payloads.
+			buffered = append(buffered, event)
 
-		if !p.emptyResponseDetection {
 			return streams.PrependStream(llmStream, buffered...), nil
 		}
+		if preReadUntilContent {
+			eventBytes, err := json.Marshal(event)
+			if err != nil || len(eventBytes) > maxPreCommitBufferedBytes-bufferedBytes {
+				llmStream.Close()
 
-		if hasResponseContent(event) {
-			// Has content, not empty — prepend buffered events back
+				return nil, ErrPreCommitBufferExceeded
+			}
+			bufferedBytes += len(eventBytes)
+		}
+		buffered = append(buffered, event)
+		if preReadUntilContent && len(buffered) > maxPreCommitBufferedEvents {
+			llmStream.Close()
+
+			return nil, ErrPreCommitBufferExceeded
+		}
+
+		if !preReadUntilContent && !p.emptyResponseDetection {
 			return streams.PrependStream(llmStream, buffered...), nil
 		}
 
@@ -191,7 +228,11 @@ func (p *pipeline) preReadLlmStream(
 		// freshly-constructed "[DONE]" terminator: outbound transformers that emit
 		// terminal events as new *llm.Response (e.g. OpenAI TTS binary streams) must
 		// still trigger empty-response handling when no audio chunks were produced.
-		if event == llm.DoneResponse || (event != nil && event.Object == "[DONE]") || hasFinishReason(event) {
+		if isTerminalLlmStreamEvent(event) {
+			if !p.emptyResponseDetection {
+				return streams.PrependStream(llmStream, buffered...), nil
+			}
+
 			// Reached end without content — empty response
 			slog.WarnContext(ctx, "empty response detected",
 				slog.Int("events_read", len(buffered)),
@@ -201,6 +242,14 @@ func (p *pipeline) preReadLlmStream(
 
 			return nil, ErrEmptyResponse
 		}
+
+		// Once retry is enabled, metadata must remain private to this attempt
+		// until meaningful content commits it, a terminal event completes it, or
+		// the stream fails. Flushing merely because an event-count probe limit was
+		// reached leaks a failed attempt and makes a still-safe retry impossible.
+		if !preReadUntilContent && len(buffered) >= probeLimit {
+			break
+		}
 	}
 
 	if err := llmStream.Err(); err != nil {
@@ -209,7 +258,14 @@ func (p *pipeline) preReadLlmStream(
 		return nil, err
 	}
 
-	// Didn't find content or finish in 3 events — treat as non-empty (safe default)
+	if preReadUntilContent {
+		llmStream.Close()
+
+		return nil, llm.ErrStreamIncomplete
+	}
+
+	// Didn't find content or finish in the bounded empty-response probe - treat
+	// as non-empty and let the handler consume the stream.
 	if len(buffered) > 0 {
 		return streams.PrependStream(llmStream, buffered...), nil
 	}
@@ -356,8 +412,9 @@ func (p *pipeline) stream(
 		})
 	}
 
-	// Check stream start for first-event timeout or empty response detection.
-	if p.emptyResponseDetection || firstEventTimeout > 0 {
+	// Check stream start before the handler commits the response. This enforces
+	// first-event timeout, empty-response detection, and pre-content retry.
+	if p.emptyResponseDetection || firstEventTimeout > 0 || p.hasStreamRetryBudget() {
 		rawLlmStream := llmStream
 
 		llmStream, err = p.preReadLlmStream(ctx, llmStream, firstEventGuard)
@@ -366,7 +423,11 @@ func (p *pipeline) stream(
 			err = firstEventGuard.finishBeforeFirstEvent(err)
 			p.applyRawErrorResponseMiddlewares(ctx, err)
 
-			return nil, err
+			if !shouldWrapPreReadStreamError(err) {
+				return nil, err
+			}
+
+			return nil, WrapUpstreamError(err)
 		}
 	} else if firstEventGuard != nil {
 		firstEventGuard.stop()

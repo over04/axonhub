@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/samber/lo"
@@ -587,4 +588,193 @@ func TestMessageFromLLM_GeminiReasoningSignatureDoesNotInjectThoughtSignature(t 
 
 	require.Len(t, msg.ToolCalls, 1)
 	require.Nil(t, msg.ToolCalls[0].ExtraContent)
+}
+
+func TestApplyReasoningEffortMapping(t *testing.T) {
+	tests := []struct {
+		name    string
+		effort  string
+		mapping []llm.ReasoningEffortMapping
+		want    string
+	}{
+		{name: "xhigh mapped to max", effort: "xhigh", mapping: []llm.ReasoningEffortMapping{{From: "xhigh", To: "max"}}, want: "max"},
+		{name: "high mapped to medium", effort: "high", mapping: []llm.ReasoningEffortMapping{{From: "high", To: "medium"}}, want: "medium"},
+		{name: "max passes through (not in list)", effort: "max", mapping: []llm.ReasoningEffortMapping{{From: "xhigh", To: "max"}}, want: "max"},
+		{name: "low passes through (not in list)", effort: "low", mapping: []llm.ReasoningEffortMapping{{From: "xhigh", To: "max"}}, want: "low"},
+		{name: "empty effort passes through", effort: "", mapping: []llm.ReasoningEffortMapping{{From: "xhigh", To: "max"}}, want: ""},
+		{name: "nil mapping passes through", effort: "xhigh", mapping: nil, want: "xhigh"},
+		{name: "empty mapping passes through", effort: "xhigh", mapping: []llm.ReasoningEffortMapping{}, want: "xhigh"},
+		{name: "multiple entries hit", effort: "high", mapping: []llm.ReasoningEffortMapping{{From: "xhigh", To: "max"}, {From: "high", To: "medium"}}, want: "medium"},
+		{name: "multiple entries miss", effort: "low", mapping: []llm.ReasoningEffortMapping{{From: "xhigh", To: "max"}, {From: "high", To: "medium"}}, want: "low"},
+		{name: "first matching entry wins", effort: "xhigh", mapping: []llm.ReasoningEffortMapping{{From: "xhigh", To: "max"}, {From: "xhigh", To: "high"}}, want: "max"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, applyReasoningEffortMapping(tt.effort, tt.mapping))
+		})
+	}
+}
+
+// TestRequestFromLLM_PreservesReasoningEffort ensures RequestFromLLM does NOT map
+// reasoning_effort: mapping is the OutboundTransformer's responsibility (driven by
+// Config.ReasoningEffortMapping), not the package-level converter's.
+func TestRequestFromLLM_PreservesReasoningEffort(t *testing.T) {
+	req := RequestFromLLM(&llm.Request{
+		Model:           "gpt-4",
+		ReasoningEffort: "xhigh",
+		Messages: []llm.Message{
+			{Role: "user", Content: llm.MessageContent{Content: lo.ToPtr("hi")}},
+		},
+	}, ReasoningFieldNone)
+
+	require.NotNil(t, req)
+	require.Equal(t, "xhigh", req.ReasoningEffort, "RequestFromLLM must keep reasoning_effort unchanged; mapping happens in TransformRequest")
+}
+
+// Assistant messages that carry tool calls but no content must still serialize a
+// content field. Omitting it (nil content) or emitting null (all parts filtered
+// out) is accepted by OpenAI but rejected by stricter OpenAI-compatible upstreams
+// whose schema only allows a string or an array.
+func TestMessageFromLLM_ToolCallOnlyMessageKeepsContentField(t *testing.T) {
+	toolCalls := []llm.ToolCall{
+		{
+			ID:   "call_1",
+			Type: "function",
+			Function: llm.FunctionCall{
+				Name:      "shell_command",
+				Arguments: `{"command":"ls"}`,
+			},
+		},
+	}
+
+	tests := []struct {
+		name    string
+		message llm.Message
+	}{
+		{
+			name: "no content at all",
+			message: llm.Message{
+				Role:      "assistant",
+				ToolCalls: toolCalls,
+			},
+		},
+		{
+			name: "every content part filtered out",
+			message: llm.Message{
+				Role: "assistant",
+				Content: llm.MessageContent{
+					MultipleContent: []llm.MessageContentPart{
+						{
+							Type:    "compaction",
+							Compact: &llm.CompactContent{ID: "cmp_1", EncryptedContent: "secret"},
+						},
+					},
+				},
+				ToolCalls: toolCalls,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := MessageFromLLM(tt.message)
+
+			data, err := json.Marshal(msg)
+			require.NoError(t, err)
+
+			var decoded map[string]any
+			require.NoError(t, json.Unmarshal(data, &decoded))
+
+			content, ok := decoded["content"]
+			require.True(t, ok, "content field must be present, got %s", data)
+			require.NotNil(t, content, "content must not be null, got %s", data)
+			require.Equal(t, "", content)
+		})
+	}
+}
+
+// Content that survives conversion must be preserved as-is.
+func TestMessageFromLLM_ToolCallMessageKeepsExistingContent(t *testing.T) {
+	msg := MessageFromLLM(llm.Message{
+		Role:    "assistant",
+		Content: llm.MessageContent{Content: lo.ToPtr("calling a tool")},
+		ToolCalls: []llm.ToolCall{
+			{
+				ID:       "call_1",
+				Type:     "function",
+				Function: llm.FunctionCall{Name: "shell_command", Arguments: "{}"},
+			},
+		},
+	})
+
+	require.NotNil(t, msg.Content.Content)
+	require.Equal(t, "calling a tool", *msg.Content.Content)
+}
+
+// Messages without tool calls keep their existing serialization, so the
+// normalization above cannot change unrelated payloads.
+func TestMessageFromLLM_WithoutToolCallsContentUnchanged(t *testing.T) {
+	msg := MessageFromLLM(llm.Message{Role: "user"})
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(data, &decoded))
+
+	_, ok := decoded["content"]
+	require.False(t, ok, "content must stay omitted for messages without tool calls, got %s", data)
+}
+
+// Responses splits text parts into input_text/output_text, but Chat Completions
+// only knows "text". Types it does understand must not be rewritten.
+func TestMessageContentPartFromLLM_NormalizesTextPartTypes(t *testing.T) {
+	tests := []struct {
+		name     string
+		partType string
+		expected string
+	}{
+		{name: "input_text becomes text", partType: "input_text", expected: "text"},
+		{name: "output_text becomes text", partType: "output_text", expected: "text"},
+		{name: "text is unchanged", partType: "text", expected: "text"},
+		{name: "image_url is unchanged", partType: "image_url", expected: "image_url"},
+		{name: "video_url is unchanged", partType: "video_url", expected: "video_url"},
+		{name: "input_audio is unchanged", partType: "input_audio", expected: "input_audio"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			part := MessageContentPartFromLLM(llm.MessageContentPart{
+				Type: tt.partType,
+				Text: lo.ToPtr("hello"),
+			})
+
+			require.Equal(t, tt.expected, part.Type)
+		})
+	}
+}
+
+// Multi-part content is the path where Responses text types actually reach an
+// upstream: a lone text part is collapsed into a plain string before this point.
+func TestRequestFromLLM_NormalizesTextPartTypesInMessages(t *testing.T) {
+	req := RequestFromLLM(&llm.Request{
+		Model: "gpt-4o",
+		Messages: []llm.Message{
+			{
+				Role: "user",
+				Content: llm.MessageContent{
+					MultipleContent: []llm.MessageContentPart{
+						{Type: "input_text", Text: lo.ToPtr("describe this")},
+						{Type: "image_url", ImageURL: &llm.ImageURL{URL: "https://example.com/a.png"}},
+					},
+				},
+			},
+		},
+	}, ReasoningFieldNone)
+
+	require.NotNil(t, req)
+	require.Len(t, req.Messages, 1)
+	require.Len(t, req.Messages[0].Content.MultipleContent, 2)
+	require.Equal(t, "text", req.Messages[0].Content.MultipleContent[0].Type)
+	require.Equal(t, "image_url", req.Messages[0].Content.MultipleContent[1].Type)
 }

@@ -24,34 +24,34 @@ var ErrNotOwner = errors.New("permission denied: owner access required")
 
 // Resolver is the resolver root.
 type Resolver struct {
-	client                         *ent.Client
-	authService                    *biz.AuthService
-	apiKeyService                  *biz.APIKeyService
-	userService                    *biz.UserService
-	systemService                  *biz.SystemService
-	channelService                 *biz.ChannelService
-	requestService                 *biz.RequestService
-	quotaService                   *biz.QuotaService
-	projectService                 *biz.ProjectService
-	dataStorageService             *biz.DataStorageService
-	roleService                    *biz.RoleService
-	traceService                   *biz.TraceService
-	threadService                  *biz.ThreadService
-	apiKeyProfileTemplateService   *biz.APIKeyProfileTemplateService
-	modelService                   *biz.ModelService
-	backupService                  *backup.BackupService
-	channelProbeService            *biz.ChannelProbeService
-	promptService                  *biz.PromptService
-	promptProtectionRuleService    *biz.PromptProtectionRuleService
-	providerQuotaService           *biz.ProviderQuotaService
-	scheduler                      *scheduler.Scheduler
-	modelFetcher                   *biz.ModelFetcher
-	defaultSelector                *orchestrator.DefaultSelector
-	candidateSelectorDiagnostics   *orchestrator.CandidateSelectorDiagnostics
-	channelLimiterManager          *orchestrator.ChannelLimiterManager
-	TestChannelOrchestrator        *orchestrator.TestChannelOrchestrator
-	gcWorker                       *gc.Worker
-	videoWorker                    *video_storage.Worker
+	client                       *ent.Client
+	authService                  *biz.AuthService
+	apiKeyService                *biz.APIKeyService
+	userService                  *biz.UserService
+	systemService                *biz.SystemService
+	channelService               *biz.ChannelService
+	requestService               *biz.RequestService
+	quotaService                 *biz.QuotaService
+	projectService               *biz.ProjectService
+	dataStorageService           *biz.DataStorageService
+	roleService                  *biz.RoleService
+	traceService                 *biz.TraceService
+	threadService                *biz.ThreadService
+	apiKeyProfileTemplateService *biz.APIKeyProfileTemplateService
+	modelService                 *biz.ModelService
+	backupService                *backup.BackupService
+	channelProbeService          *biz.ChannelProbeService
+	promptService                *biz.PromptService
+	promptProtectionRuleService  *biz.PromptProtectionRuleService
+	providerQuotaService         *biz.ProviderQuotaService
+	scheduler                    *scheduler.Scheduler
+	modelFetcher                 *biz.ModelFetcher
+	defaultSelector              *orchestrator.DefaultSelector
+	candidateSelectorDiagnostics *orchestrator.CandidateSelectorDiagnostics
+	channelLimiterManager        *orchestrator.ChannelLimiterManager
+	TestChannelOrchestrator      *orchestrator.TestChannelOrchestrator
+	gcWorker                     *gc.Worker
+	videoWorker                  *video_storage.Worker
 }
 
 // NewSchema creates a graphql executable schema.
@@ -89,34 +89,34 @@ func NewSchema(
 
 	return NewExecutableSchema(Config{
 		Resolvers: &Resolver{
-			client:                         client,
-			authService:                    authService,
-			apiKeyService:                  apiKeyService,
-			userService:                    userService,
-			systemService:                  systemService,
-			channelService:                 channelService,
-			requestService:                 requestService,
-			quotaService:                   quotaService,
-			projectService:                 projectService,
-			dataStorageService:             dataStorageService,
-			roleService:                    roleService,
-			traceService:                   traceService,
-			threadService:                  threadService,
-			apiKeyProfileTemplateService:   apiKeyProfileTemplateService,
-			modelService:                   modelService,
-			backupService:                  backupService,
-			channelProbeService:            channelProbeService,
-			promptService:                  promptService,
-			promptProtectionRuleService:    promptProtectionRuleService,
-			providerQuotaService:           providerQuotaService,
-			scheduler:                      scheduler,
-			modelFetcher:                   modelFetcher,
-			defaultSelector:                defaultSelector,
-			candidateSelectorDiagnostics:   candidateSelectorDiagnostics,
-			channelLimiterManager:          channelLimiterManager,
-			TestChannelOrchestrator:        orchestrator.NewTestChannelOrchestrator(channelService, requestService, systemService, usageLogService, promptProtectionRuleService, httpClient),
-			gcWorker:                       gcWorker,
-			videoWorker:                    videoWorker,
+			client:                       client,
+			authService:                  authService,
+			apiKeyService:                apiKeyService,
+			userService:                  userService,
+			systemService:                systemService,
+			channelService:               channelService,
+			requestService:               requestService,
+			quotaService:                 quotaService,
+			projectService:               projectService,
+			dataStorageService:           dataStorageService,
+			roleService:                  roleService,
+			traceService:                 traceService,
+			threadService:                threadService,
+			apiKeyProfileTemplateService: apiKeyProfileTemplateService,
+			modelService:                 modelService,
+			backupService:                backupService,
+			channelProbeService:          channelProbeService,
+			promptService:                promptService,
+			promptProtectionRuleService:  promptProtectionRuleService,
+			providerQuotaService:         providerQuotaService,
+			scheduler:                    scheduler,
+			modelFetcher:                 modelFetcher,
+			defaultSelector:              defaultSelector,
+			candidateSelectorDiagnostics: candidateSelectorDiagnostics,
+			channelLimiterManager:        channelLimiterManager,
+			TestChannelOrchestrator:      orchestrator.NewTestChannelOrchestrator(channelService, requestService, systemService, usageLogService, promptProtectionRuleService, httpClient),
+			gcWorker:                     gcWorker,
+			videoWorker:                  videoWorker,
 		},
 	})
 }

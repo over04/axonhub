@@ -107,8 +107,22 @@ func WithTrace(config tracing.Config, traceService *biz.TraceService) gin.Handle
 		}
 
 		if traceID == "" {
+			// WithLoggingTracing creates an ID for log correlation, but that alone
+			// must not opt the request into persisted tracing. Only explicitly
+			// configured trace sources should create a trace record.
 			c.Next()
+
 			return
+		}
+
+		// The trace middleware can resolve a more specific ID from fallback headers
+		// or request bodies. Keep the request context in sync with that final value.
+		c.Request = c.Request.WithContext(tracing.WithTraceID(c.Request.Context(), traceID))
+
+		for _, header := range config.ResponseTraceHeaders {
+			if header = strings.TrimSpace(header); header != "" {
+				c.Header(header, traceID)
+			}
 		}
 
 		// Get project ID from context

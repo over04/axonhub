@@ -22,8 +22,8 @@ func (f *fakeCompleteInner) Next() bool {
 	return true
 }
 func (f *fakeCompleteInner) Current() *httpclient.StreamEvent { return f.events[f.idx-1] }
-func (f *fakeCompleteInner) Err() error                      { return nil }
-func (f *fakeCompleteInner) Close() error                    { return nil }
+func (f *fakeCompleteInner) Err() error                       { return nil }
+func (f *fakeCompleteInner) Close() error                     { return nil }
 
 type fakeCompleter struct {
 	extra []*httpclient.StreamEvent

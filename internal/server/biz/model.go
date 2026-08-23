@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -20,6 +21,7 @@ import (
 	"github.com/looplj/axonhub/internal/pkg/xregexp"
 	"github.com/looplj/axonhub/internal/pkg/xtime"
 	"github.com/looplj/axonhub/internal/scopes"
+	"github.com/looplj/axonhub/llm/httpclient"
 )
 
 type ModelServiceParams struct {
@@ -53,7 +55,19 @@ func (svc *ModelService) validateModelSettings(settings *objects.ModelSettings) 
 }
 
 func validateModelSettings(settings *objects.ModelSettings) error {
-	if settings == nil || len(settings.Associations) == 0 {
+	if settings == nil {
+		return nil
+	}
+
+	settings.NormalizeRoutingPolicy()
+	if !objects.IsValidLoadBalancerStrategy(settings.LoadBalancerStrategy) {
+		return fmt.Errorf("invalid load balancer strategy %q", settings.LoadBalancerStrategy)
+	}
+	if !objects.IsValidTraceStickyMode(settings.TraceStickyMode) {
+		return fmt.Errorf("invalid trace sticky mode %q", settings.TraceStickyMode)
+	}
+
+	if len(settings.Associations) == 0 {
 		return nil
 	}
 
@@ -189,6 +203,10 @@ func validateFilterLeaf(condition objects.Condition) error {
 		return fmt.Errorf("condition field is required")
 	}
 
+	if strings.HasPrefix(condition.Field, objects.ModelAssociationConditionFieldRequestHeaderPrefix) {
+		return validateRequestHeaderLeaf(condition)
+	}
+
 	switch condition.Field {
 	case objects.ModelAssociationConditionFieldPromptTokens:
 		return validatePromptTokensLeaf(condition)
@@ -280,6 +298,32 @@ func validateDailyTimeLeaf(condition objects.Condition) error {
 	return nil
 }
 
+func validateRequestHeaderLeaf(condition objects.Condition) error {
+	switch strings.TrimSpace(strings.ToLower(condition.Operator)) {
+	case "eq", "ne", "=", "==", "!=", "<>", "contains", "not_contains", "start_with", "end_with":
+	default:
+		return fmt.Errorf("unsupported condition operator %q for request_header", condition.Operator)
+	}
+
+	headerName := strings.TrimSpace(strings.TrimPrefix(condition.Field, objects.ModelAssociationConditionFieldRequestHeaderPrefix))
+	if headerName == "" {
+		return fmt.Errorf("request header name is required")
+	}
+	if len(headerName) > 256 {
+		return fmt.Errorf("request header name is too long")
+	}
+	if httpclient.IsSensitiveHeader(headerName) {
+		return fmt.Errorf("request header %q is sensitive and cannot be used in conditions", headerName)
+	}
+
+	value, ok := condition.Value.(string)
+	if !ok || value == "" {
+		return fmt.Errorf("condition value for request_header must be a non-empty string")
+	}
+
+	return nil
+}
+
 func filterValueToInt64(value any) (int64, bool) {
 	switch v := value.(type) {
 	case int:
@@ -349,6 +393,12 @@ func (svc *ModelService) BulkCreateModels(ctx context.Context, inputs []*ent.Cre
 	inputMap := make(map[string]bool)
 
 	for _, input := range inputs {
+		if input.Settings != nil {
+			if err := svc.validateModelSettings(input.Settings); err != nil {
+				return nil, err
+			}
+		}
+
 		key := fmt.Sprintf("%s:%s", input.Developer, input.ModelID)
 		if inputMap[key] {
 			return nil, fmt.Errorf("duplicate model in input: developer '%s' and modelId '%s'", input.Developer, input.ModelID)
@@ -590,6 +640,8 @@ func (svc *ModelService) ListModels(ctx context.Context, statusIn []model.Status
 // When QueryAllChannelModels in system settings is false, it returns configured models instead.
 // If an API key is present in context and has an active profile with modelIDs configured,
 // only those models will be returned.
+// When HideUnroutableModelsInList is true, configured models with no capable
+// endpoint on the key-scoped channels are omitted from this public list.
 func (svc *ModelService) ListEnabledModels(ctx context.Context) ([]ModelFacade, error) {
 	var (
 		channels = svc.channelService.GetEnabledChannels()
@@ -636,7 +688,7 @@ func (svc *ModelService) ListEnabledModels(ctx context.Context) ([]ModelFacade, 
 	}
 
 	// Query configured Model entities (used in both modes)
-	configuredModels, err := svc.queryConfiguredModelFacades(ctx, allowedModelIDs, channels)
+	configuredModels, suppressedIDs, err := svc.queryConfiguredModelFacades(ctx, allowedModelIDs, channels)
 	if err != nil {
 		return nil, err
 	}
@@ -649,12 +701,17 @@ func (svc *ModelService) ListEnabledModels(ctx context.Context) ([]ModelFacade, 
 	// QueryAllChannelModels=true: merge configured models (higher priority) with channel models
 	var (
 		models    = configuredModels
-		modelSet  = make(map[string]bool, len(configuredModels))
+		modelSet  = make(map[string]bool, len(configuredModels)+len(suppressedIDs))
 		blacklist = settings.ModelBlacklistRegex
 	)
 
 	for _, m := range configuredModels {
 		modelSet[m.ID] = true
+	}
+	// Hidden configured IDs must not reappear as channel-derived facades.
+	// Routing still binds those IDs to the configured associations.
+	for id := range suppressedIDs {
+		modelSet[id] = true
 	}
 
 	for _, ch := range channels {
@@ -698,7 +755,9 @@ func (svc *ModelService) ListEnabledModels(ctx context.Context) ([]ModelFacade, 
 
 // queryConfiguredModelFacades queries enabled Model entities and returns them as ModelFacades
 // filtered by allowed model IDs and channel associations.
-func (svc *ModelService) queryConfiguredModelFacades(ctx context.Context, allowedModelIDs []string, channels []*Channel) ([]ModelFacade, error) {
+// suppressedIDs are configured model IDs omitted as structurally unroutable; callers that
+// merge channel-derived models must treat them as already seen so they are not resurrected.
+func (svc *ModelService) queryConfiguredModelFacades(ctx context.Context, allowedModelIDs []string, channels []*Channel) ([]ModelFacade, map[string]struct{}, error) {
 	query := svc.entFromContext(ctx).
 		Model.
 		Query().
@@ -709,27 +768,35 @@ func (svc *ModelService) queryConfiguredModelFacades(ctx context.Context, allowe
 
 	enabledModels, err := query.All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list configured models: %w", err)
+		return nil, nil, fmt.Errorf("failed to list configured models: %w", err)
 	}
 
 	var models []ModelFacade
+	suppressedIDs := make(map[string]struct{})
 	systemSettings := svc.modelSettingsOrDefault(ctx)
 
 	for _, m := range enabledModels {
 		effectiveAssociations := EffectiveModelAssociations(systemSettings, m)
-		associations := MatchConnections(effectiveAssociations, channels)
-		if len(associations) > 0 {
-			models = append(models, ModelFacade{
-				ID:          m.ModelID,
-				DisplayName: m.ModelID,
-				CreatedAt:   m.CreatedAt,
-				Created:     m.CreatedAt.Unix(),
-				OwnedBy:     "configured",
-			})
+		connections := MatchConnections(effectiveAssociations, channels)
+		if len(connections) == 0 {
+			continue
 		}
+
+		if systemSettings.HideUnroutableModelsInList && !hasCapableEndpointForModel(m, connections) {
+			suppressedIDs[m.ModelID] = struct{}{}
+			continue
+		}
+
+		models = append(models, ModelFacade{
+			ID:          m.ModelID,
+			DisplayName: m.ModelID,
+			CreatedAt:   m.CreatedAt,
+			Created:     m.CreatedAt.Unix(),
+			OwnedBy:     "configured",
+		})
 	}
 
-	return models, nil
+	return models, suppressedIDs, nil
 }
 
 // CountAssociatedChannels counts the number of unique channels associated with the given model associations.

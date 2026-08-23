@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from '@tanstack/react-router';
-import { BarChart3, Brain, Key, Zap, ChevronDown } from 'lucide-react';
+import { BarChart3, Brain, Key, Users, Zap, ChevronDown, ChevronRight, TrendingUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,6 +13,7 @@ import { DailyRequestStats } from './components/daily-requests-stats';
 import { RequestsByChannelChart } from './components/requests-by-channel-chart';
 import { RequestsByModelChart } from './components/requests-by-model-chart';
 import { RequestsByAPIKeyChart } from './components/requests-by-api-key-chart';
+import { TokensByUserChart } from './components/tokens-by-user-chart';
 import { TokensByAPIKeyChart } from './components/tokens-by-api-key-chart';
 import { TokensByChannelChart } from './components/tokens-by-channel-chart';
 import { TokensByModelChart } from './components/tokens-by-model-chart';
@@ -28,6 +29,7 @@ import { useDashboardStats } from './data/dashboard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { ProjectUsage } from './components/project-usage';
 import { ModelAvailabilitySection } from './components/model-availability-section';
+import { useRoutePermissions } from '@/hooks/useRoutePermissions';
 
 interface CollapsibleSectionProps {
   title: string;
@@ -116,6 +118,7 @@ export default function DashboardPage() {
 function OwnerDashboard() {
   const { t } = useTranslation();
   const { isLoading, error } = useDashboardStats();
+  const { isProjectOwner } = useRoutePermissions();
   const [modelTotalRequests, setModelTotalRequests] = useState(0);
   const [channelTotalRequests, setChannelTotalRequests] = useState(0);
 
@@ -125,6 +128,7 @@ function OwnerDashboard() {
   const [modelTokensTimePeriod, setModelTokensTimePeriod] = useState<TimePeriod>('allTime');
   const [apiKeyTimePeriod, setApiKeyTimePeriod] = useState<TimePeriod>('allTime');
   const [apiKeyTokensTimePeriod, setApiKeyTokensTimePeriod] = useState<TimePeriod>('allTime');
+  const [userTokensTimePeriod, setUserTokensTimePeriod] = useState<TimePeriod>('day');
 
   const modelPerformanceDescription = useMemo(() => {
     return t('dashboard.charts.performanceDescription', { count: formatNumber(modelTotalRequests) });
@@ -206,6 +210,23 @@ function OwnerDashboard() {
       </section>
 
       <ModelAvailabilitySection />
+
+      {/* 使用详情分析 - 导航卡片 */}
+      <Link
+        to='/analytics'
+        className='flex w-full items-center justify-between rounded-lg border bg-card p-4 text-left transition-colors hover:bg-accent/50'
+      >
+        <div className='flex items-center gap-3'>
+          <div className='flex h-8 w-8 items-center justify-center rounded-md bg-primary/10'>
+            <TrendingUp className='h-4 w-4 text-primary' />
+          </div>
+          <div>
+            <span className='text-lg font-semibold'>{t('dashboard.sections.analytics')}</span>
+            <p className='text-sm text-muted-foreground'>{t('dashboard.sections.analyticsDescription')}</p>
+          </div>
+        </div>
+        <ChevronRight className='h-5 w-5 text-muted-foreground' />
+      </Link>
 
       {/* 渠道分析 - 可折叠 */}
       <CollapsibleSection
@@ -308,6 +329,30 @@ function OwnerDashboard() {
           </Card>
         </div>
       </CollapsibleSection>
+
+      {/* 用户分析 - 可折叠 */}
+      {isProjectOwner && (
+        <CollapsibleSection
+          title={t('dashboard.sections.users')}
+          icon={<Users className='h-4 w-4 text-primary' />}
+          storageKey='users'
+        >
+          <div className='grid gap-4 md:grid-cols-1 lg:grid-cols-7'>
+            <Card className='hover-card col-span-1 lg:col-span-4'>
+              <CardHeader>
+                <CardTitle>{t('dashboard.charts.tokensByUser')}</CardTitle>
+                <CardDescription>{t('dashboard.charts.tokensByUserDescription')}</CardDescription>
+                <CardAction>
+                  <TimePeriodSelector value={userTokensTimePeriod} onChange={setUserTokensTimePeriod} />
+                </CardAction>
+              </CardHeader>
+              <CardContent>
+                <TokensByUserChart timePeriod={userTokensTimePeriod} />
+              </CardContent>
+            </Card>
+          </div>
+        </CollapsibleSection>
+      )}
 
       {/* 性能分析 - 可折叠 */}
       <CollapsibleSection

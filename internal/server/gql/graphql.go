@@ -50,34 +50,34 @@ import (
 type Dependencies struct {
 	fx.In
 
-	Ent                            *ent.Client
-	AuthService                    *biz.AuthService
-	APIKeyService                  *biz.APIKeyService
-	UserService                    *biz.UserService
-	SystemService                  *biz.SystemService
-	ChannelService                 *biz.ChannelService
-	RequestService                 *biz.RequestService
-	QuotaService                   *biz.QuotaService
-	ProjectService                 *biz.ProjectService
-	DataStorageService             *biz.DataStorageService
-	RoleService                    *biz.RoleService
-	TraceService                   *biz.TraceService
-	ThreadService                  *biz.ThreadService
-	UsageLogService                *biz.UsageLogService
-	APIKeyProfileTemplateService   *biz.APIKeyProfileTemplateService
-	ModelService                   *biz.ModelService
-	BackupService                  *backup.BackupService
-	ChannelProbeService            *biz.ChannelProbeService
-	PromptService                  *biz.PromptService
-	PromptProtectionRuleService    *biz.PromptProtectionRuleService
-	ProviderQuotaService           *biz.ProviderQuotaService
-	Scheduler                      *scheduler.Scheduler
-	DefaultSelector                *orchestrator.DefaultSelector
-	CandidateSelectorDiagnostics   *orchestrator.CandidateSelectorDiagnostics
-	ChannelLimiterManager          *orchestrator.ChannelLimiterManager
-	HttpClient                     *httpclient.HttpClient
-	GCWorker                       *gc.Worker
-	VideoWorker                    *video_storage.Worker
+	Ent                          *ent.Client
+	AuthService                  *biz.AuthService
+	APIKeyService                *biz.APIKeyService
+	UserService                  *biz.UserService
+	SystemService                *biz.SystemService
+	ChannelService               *biz.ChannelService
+	RequestService               *biz.RequestService
+	QuotaService                 *biz.QuotaService
+	ProjectService               *biz.ProjectService
+	DataStorageService           *biz.DataStorageService
+	RoleService                  *biz.RoleService
+	TraceService                 *biz.TraceService
+	ThreadService                *biz.ThreadService
+	UsageLogService              *biz.UsageLogService
+	APIKeyProfileTemplateService *biz.APIKeyProfileTemplateService
+	ModelService                 *biz.ModelService
+	BackupService                *backup.BackupService
+	ChannelProbeService          *biz.ChannelProbeService
+	PromptService                *biz.PromptService
+	PromptProtectionRuleService  *biz.PromptProtectionRuleService
+	ProviderQuotaService         *biz.ProviderQuotaService
+	Scheduler                    *scheduler.Scheduler
+	DefaultSelector              *orchestrator.DefaultSelector
+	CandidateSelectorDiagnostics *orchestrator.CandidateSelectorDiagnostics
+	ChannelLimiterManager        *orchestrator.ChannelLimiterManager
+	HttpClient                   *httpclient.HttpClient
+	GCWorker                     *gc.Worker
+	VideoWorker                  *video_storage.Worker
 }
 
 type GraphqlHandler struct {
@@ -131,13 +131,16 @@ func NewGraphqlHandlers(deps Dependencies) *GraphqlHandler {
 		Cache: lru.New[string](1024),
 	})
 	gqlSrv.Use(&loggingTracer{})
+	skipTestChannelTransaction := entgql.SkipOperations("TestChannel", "TestChannelAPIKeys")
+	skipBulkImportTransaction := entgql.SkipIfHasFields("bulkImportChannels")
 	gqlSrv.Use(entgql.Transactioner{
 		TxOpener: deps.Ent,
-		// Skip transaction for TestChannel mutation to avoid transaction conflicts
-		// when multiple test requests are sent in parallel from the frontend.
-		// TestChannel performs LLM API calls which can be long-running, and the
-		// database operations within don't require transactional consistency.
-		SkipTxFunc: entgql.SkipOperations("TestChannel", "TestChannelAPIKeys"),
+		// TestChannel performs long-running parallel provider requests whose database
+		// operations do not require one transaction. BulkImportChannels manages one
+		// transaction per row to preserve its partial-success behavior.
+		SkipTxFunc: func(op *ast.OperationDefinition) bool {
+			return skipTestChannelTransaction(op) || skipBulkImportTransaction(op)
+		},
 	})
 
 	// Set error presenter to handle CodedError and add extensions.code
@@ -175,24 +178,24 @@ func NewGraphqlHandlers(deps Dependencies) *GraphqlHandler {
 }
 
 var guidTypeToNodeType = map[string]string{
-	ent.TypeUser:                    user.Table,
-	ent.TypeAPIKey:                  apikey.Table,
-	ent.TypeAPIKeyProfileTemplate:   apikeyprofiletemplate.Table,
-	ent.TypeModel:                   model.Table,
-	ent.TypeChannel:                 channel.Table,
-	ent.TypeChannelProbe:            channelprobe.Table,
-	ent.TypeRequest:                 request.Table,
-	ent.TypeRequestExecution:        requestexecution.Table,
-	ent.TypeRole:                    role.Table,
-	ent.TypeSystem:                  system.Table,
-	ent.TypeUsageLog:                usagelog.Table,
-	ent.TypeProject:                 project.Table,
-	ent.TypeUserProject:             userproject.Table,
-	ent.TypeUserRole:                userrole.Table,
-	ent.TypeThread:                  thread.Table,
-	ent.TypeTrace:                   trace.Table,
-	ent.TypeDataStorage:             datastorage.Table,
-	ent.TypePrompt:                  prompt.Table,
+	ent.TypeUser:                  user.Table,
+	ent.TypeAPIKey:                apikey.Table,
+	ent.TypeAPIKeyProfileTemplate: apikeyprofiletemplate.Table,
+	ent.TypeModel:                 model.Table,
+	ent.TypeChannel:               channel.Table,
+	ent.TypeChannelProbe:          channelprobe.Table,
+	ent.TypeRequest:               request.Table,
+	ent.TypeRequestExecution:      requestexecution.Table,
+	ent.TypeRole:                  role.Table,
+	ent.TypeSystem:                system.Table,
+	ent.TypeUsageLog:              usagelog.Table,
+	ent.TypeProject:               project.Table,
+	ent.TypeUserProject:           userproject.Table,
+	ent.TypeUserRole:              userrole.Table,
+	ent.TypeThread:                thread.Table,
+	ent.TypeTrace:                 trace.Table,
+	ent.TypeDataStorage:           datastorage.Table,
+	ent.TypePrompt:                prompt.Table,
 }
 
 func getNilableChannel(ctx context.Context, client *ent.Client, channelID int) (*ent.Channel, error) {

@@ -113,6 +113,7 @@
 | `delete` | `path` | 删除 `path`。 |
 | `append` | `path`, `value` | 对数组追加元素，对字符串追加文本，对对象合并字段。 |
 | `prepend` | `path`, `value` | 对数组前置元素，对字符串前置文本，对对象合并字段。 |
+| `array_remove` | `path`, `match` | 按 `match` 规则移除 `path` 数组中的条目：条目的 `match.path` 字段值等于 `match.eq` 时被移除。目标不存在或不是数组时跳过。 |
 | `copy` | `from`, `to` | 将请求体值从 `from` 复制到 `to`。 |
 | `move` | `from`, `to` | 将请求体值从 `from` 移动到 `to`。 |
 | `replace` | `path`, `from`, `to` | 对目标字符串执行普通字符串替换。 |

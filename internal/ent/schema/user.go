@@ -96,6 +96,7 @@ func (User) Policy() ent.Policy {
 	return scopes.Policy{
 		Query: scopes.QueryPolicy{
 			scopes.OwnerRule(),
+			scopes.ProjectOwnerReadUsersRule(),
 			scopes.UserReadScopeRule(scopes.ScopeReadUsers),
 			scopes.UserOwnedQueryRule(),
 		},

@@ -164,4 +164,8 @@ config.schema.json
 *.agent/summary
 .factory
 .omo/
+.omc/
 .playwright-mcp/
+.ace-tool/
+.omx/
+deploy_dev.sh

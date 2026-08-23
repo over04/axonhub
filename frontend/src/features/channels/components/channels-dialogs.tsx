@@ -1,6 +1,7 @@
 import { useChannels } from '../context/channels-context';
 import { ChannelsActionDialog } from './channels-action-dialog';
 import { ChannelsArchiveDialog } from './channels-archive-dialog';
+import { ChannelsAvailabilityDialog } from './channels-availability-dialog';
 import { ChannelsBulkArchiveDialog } from './channels-bulk-archive-dialog';
 import { ChannelsBulkDeleteDialog } from './channels-bulk-delete-dialog';
 import { ChannelsBulkDisableDialog } from './channels-bulk-disable-dialog';
@@ -22,6 +23,7 @@ import { ChannelsSystemSettingsDialog } from './channels-system-settings-dialog'
 import { ChannelsTestAPIKeysDialog } from './channels-test-api-keys-dialog';
 import { ChannelsTestDialog } from './channels-test-dialog';
 import { ChannelsTestHistoryDrawer } from './channels-test-history-drawer';
+import { ChannelsAPIKeyManagementDialog } from './channels-api-key-management-dialog';
 import { ChannelsTransformOptionsDialog } from './channels-transform-options-dialog';
 
 export function ChannelsDialogs() {
@@ -301,9 +303,23 @@ export function ChannelsDialogs() {
             }}
           />
 
-          <ChannelsTestAPIKeysDialog
-            key={`channel-test-api-keys-${currentRow.id}`}
-            open={open === 'testAPIKeys'}
+          <ChannelsAvailabilityDialog
+            key={`channel-availability-${currentRow.id}`}
+            open={open === 'availability'}
+            onOpenChange={(isOpen) => {
+              if (!isOpen) {
+                setOpen(null);
+                setTimeout(() => {
+                  setCurrentRow(null);
+                }, 500);
+              }
+            }}
+            currentRow={currentRow}
+          />
+
+          <ChannelsAPIKeyManagementDialog
+            key={`channel-key-management-${currentRow.id}`}
+            open={open === 'keyManagement'}
             onOpenChange={(isOpen) => {
               if (!isOpen) {
                 setOpen(null);

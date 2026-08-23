@@ -122,6 +122,25 @@ func TestWorker_cleanupExecutionExternalStorageDeletesFsArtifacts(t *testing.T) 
 	}
 }
 
+func TestHasRealDirectories(t *testing.T) {
+	cases := []struct {
+		typ  datastorage.Type
+		want bool
+	}{
+		{datastorage.TypeFs, true},
+		{datastorage.TypeWebdav, true},
+		{datastorage.TypeS3, false},
+		{datastorage.TypeGcs, false},
+		{datastorage.TypeDatabase, false},
+	}
+
+	for _, c := range cases {
+		if got := hasRealDirectories(c.typ); got != c.want {
+			t.Errorf("hasRealDirectories(%s) = %v, want %v", c.typ, got, c.want)
+		}
+	}
+}
+
 func setupWorkerWithFSStorage(t *testing.T) (*Worker, context.Context, *ent.DataStorage, string) {
 	t.Helper()
 
@@ -158,6 +177,16 @@ func setupWorkerWithFSStorage(t *testing.T) (*Worker, context.Context, *ent.Data
 	dirCopy := dir
 	settings := &objects.DataStorageSettings{Directory: &dirCopy}
 
+	_, err := client.DataStorage.Create().
+		SetName("primary").
+		SetDescription("primary database").
+		SetPrimary(true).
+		SetType(datastorage.TypeDatabase).
+		SetSettings(&objects.DataStorageSettings{}).
+		SetStatus(datastorage.StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
 	dataStorage, err := client.DataStorage.Create().
 		SetName("fs-storage").
 		SetDescription("test fs storage").
@@ -169,6 +198,7 @@ func setupWorkerWithFSStorage(t *testing.T) (*Worker, context.Context, *ent.Data
 	require.NoError(t, err)
 
 	worker := &Worker{
+		SystemService:      systemService,
 		DataStorageService: dataStorageService,
 		Ent:                client,
 	}

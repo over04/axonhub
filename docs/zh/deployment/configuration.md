@@ -62,10 +62,14 @@ server:
   base_path: ""                 # API 路由的基础路径
   request_timeout: "30s"        # 请求超时时间
   llm_request_timeout: "600s"   # LLM 请求超时时间
+  sse_keep_alive:
+    enabled: false               # SSE 流空闲时发送与 API 格式兼容的心跳
+    interval: "15s"              # 两次心跳之间的空闲时长
   trace:
     thread_header: "AH-Thread-Id" # 线程 ID 请求头名称
     trace_header: "AH-Trace-Id" # 追踪 ID 请求头名称
     extra_trace_headers: []     # 额外的追踪请求头
+    response_trace_headers: []  # 回写最终追踪 ID 的响应头列表，空列表时关闭
     claude_code_trace_enabled: false # 启用 Claude Code 追踪提取
     codex_trace_enabled: false # 启用 Codex 追踪提取
   debug: false                  # 启用调试模式
@@ -78,13 +82,18 @@ server:
 - `AXONHUB_SERVER_BASE_PATH`
 - `AXONHUB_SERVER_REQUEST_TIMEOUT`
 - `AXONHUB_SERVER_LLM_REQUEST_TIMEOUT`
+- `AXONHUB_SERVER_SSE_KEEP_ALIVE_ENABLED`
+- `AXONHUB_SERVER_SSE_KEEP_ALIVE_INTERVAL`
 - `AXONHUB_SERVER_TRACE_THREAD_HEADER`
 - `AXONHUB_SERVER_TRACE_TRACE_HEADER`
 - `AXONHUB_SERVER_TRACE_EXTRA_TRACE_HEADERS`
+- `AXONHUB_SERVER_TRACE_RESPONSE_TRACE_HEADERS`
 - `AXONHUB_SERVER_TRACE_CLAUDE_CODE_TRACE_ENABLED`
 - `AXONHUB_SERVER_TRACE_CODEX_TRACE_ENABLED`
 - `AXONHUB_SERVER_DEBUG`
 - `AXONHUB_SERVER_DISABLE_SSL_VERIFY`
+
+SSE 心跳目前应用于 OpenAI 兼容和 Anthropic 兼容的流式 API，暂不应用于 Gemini 流式 API。
 
 ### 数据库配置
 
@@ -295,7 +304,7 @@ log:
 metrics:
   enabled: false                 # 启用指标收集
   exporter:
-    type: "oltphttp"            # prometheus, console
+    type: "otlphttp"            # prometheus, console
     endpoint: "localhost:8080"  # 指标导出器端点
     insecure: true              # 启用不安全连接
 ```

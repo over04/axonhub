@@ -10,12 +10,14 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/looplj/axonhub/internal/authz"
 	"github.com/looplj/axonhub/internal/contexts"
 	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/ent/apikey"
 	"github.com/looplj/axonhub/internal/ent/channel"
 	"github.com/looplj/axonhub/internal/ent/project"
 	"github.com/looplj/axonhub/internal/ent/request"
+	"github.com/looplj/axonhub/internal/ent/trace"
 	"github.com/looplj/axonhub/internal/ent/user"
 	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/internal/scopes"
@@ -23,6 +25,11 @@ import (
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/samber/lo"
 )
+
+// LinkedProfilesCount is the resolver for the linkedProfilesCount field.
+func (r *aPIKeyProfileTemplateResolver) LinkedProfilesCount(ctx context.Context, obj *ent.APIKeyProfileTemplate) (int, error) {
+	return r.apiKeyProfileTemplateService.CountLinkedProfiles(ctx, obj)
+}
 
 // DefaultEndpoints is the resolver for the defaultEndpoints field.
 func (r *channelResolver) DefaultEndpoints(ctx context.Context, obj *ent.Channel) ([]*objects.ChannelEndpoint, error) {
@@ -267,6 +274,24 @@ func (r *mutationResolver) TestChannelAPIKeys(ctx context.Context, channelID obj
 		SuccessCount: result.SuccessCount,
 		FailedCount:  result.FailedCount,
 		Results:      apiKeyResults,
+	}, nil
+}
+
+// TestChannelAPIKey is the resolver for the testChannelAPIKey field.
+func (r *mutationResolver) TestChannelAPIKey(ctx context.Context, channelID objects.GUID, key string, modelID *string) (*TestAPIKeyResult, error) {
+	ctx = contexts.WithSource(ctx, request.SourceTest)
+
+	result, err := r.TestChannelOrchestrator.TestSingleAPIKey(ctx, channelID, key, modelID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to test channel API key: %w", err)
+	}
+
+	return &TestAPIKeyResult{
+		KeyPrefix: result.KeyPrefix,
+		Success:   result.Success,
+		Latency:   result.Latency,
+		Error:     result.Error,
+		Disabled:  result.Disabled,
 	}, nil
 }
 
@@ -559,6 +584,78 @@ func (r *mutationResolver) LoadAPIKeyProfileTemplate(ctx context.Context, input 
 	return r.apiKeyProfileTemplateService.LoadTemplate(ctx, input.TemplateID.ID, input.APIKeyID.ID)
 }
 
+// ArchiveTrace is the resolver for the archiveTrace field.
+func (r *mutationResolver) ArchiveTrace(ctx context.Context, id objects.GUID) (bool, error) {
+	if err := r.traceService.Archive(ctx, id.ID); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// UnarchiveTrace is the resolver for the unarchiveTrace field.
+func (r *mutationResolver) UnarchiveTrace(ctx context.Context, id objects.GUID) (bool, error) {
+	if err := r.traceService.Unarchive(ctx, id.ID); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// RetainTrace is the resolver for the retainTrace field.
+func (r *mutationResolver) RetainTrace(ctx context.Context, id objects.GUID) (bool, error) {
+	if err := r.traceService.Retain(ctx, id.ID); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// UnretainTrace is the resolver for the unretainTrace field.
+func (r *mutationResolver) UnretainTrace(ctx context.Context, id objects.GUID) (bool, error) {
+	if err := r.traceService.Unretain(ctx, id.ID); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// ArchiveThread is the resolver for the archiveThread field.
+func (r *mutationResolver) ArchiveThread(ctx context.Context, id objects.GUID) (bool, error) {
+	if err := r.threadService.Archive(ctx, id.ID); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// UnarchiveThread is the resolver for the unarchiveThread field.
+func (r *mutationResolver) UnarchiveThread(ctx context.Context, id objects.GUID) (bool, error) {
+	if err := r.threadService.Unarchive(ctx, id.ID); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// RetainThread is the resolver for the retainThread field.
+func (r *mutationResolver) RetainThread(ctx context.Context, id objects.GUID) (bool, error) {
+	if err := r.threadService.Retain(ctx, id.ID); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// UnretainThread is the resolver for the unretainThread field.
+func (r *mutationResolver) UnretainThread(ctx context.Context, id objects.GUID) (bool, error) {
+	if err := r.threadService.Unretain(ctx, id.ID); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
 // AllChannelSummarys is the resolver for the allChannelSummarys field.
 func (r *queryResolver) AllChannelSummarys(ctx context.Context, includeArchived *bool) ([]*ent.Channel, error) {
 	statusFilter := []channel.Status{channel.StatusEnabled, channel.StatusDisabled}
@@ -566,20 +663,49 @@ func (r *queryResolver) AllChannelSummarys(ctx context.Context, includeArchived 
 		statusFilter = append(statusFilter, channel.StatusArchived)
 	}
 
-	channels, err := r.client.Channel.Query().
-		Where(channel.StatusIn(statusFilter...)).
-		Order(ent.Desc(channel.FieldOrderingWeight)).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query channels: %w", err)
-	}
-
 	projectID, ok := contexts.GetProjectID(ctx)
+	canReadChannels := authz.HasScope(ctx, scopes.ScopeReadChannels)
 	if !ok || projectID == 0 {
+		if !canReadChannels {
+			return nil, authz.RequireScope(ctx, scopes.ScopeReadChannels)
+		}
+		channels, err := r.client.Channel.Query().
+			Where(channel.StatusIn(statusFilter...)).
+			Order(ent.Desc(channel.FieldOrderingWeight)).
+			All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query channels: %w", err)
+		}
 		return channels, nil
 	}
 
-	proj, err := r.client.Project.Get(ctx, projectID)
+	var (
+		channels []*ent.Channel
+		err      error
+	)
+	if canReadChannels {
+		channels, err = r.client.Channel.Query().
+			Where(channel.StatusIn(statusFilter...)).
+			Order(ent.Desc(channel.FieldOrderingWeight)).
+			All(ctx)
+	} else {
+		if !authz.HasScope(ctx, scopes.ScopeWriteRequests) && !authz.HasScope(ctx, scopes.ScopeWriteAPIKeys) {
+			return nil, authz.RequireScope(ctx, scopes.ScopeWriteRequests)
+		}
+		channels, err = authz.RunWithSystemBypass(ctx, "project-available-channels", func(ctx context.Context) ([]*ent.Channel, error) {
+			return r.client.Channel.Query().
+				Where(channel.StatusEQ(channel.StatusEnabled)).
+				Order(ent.Desc(channel.FieldOrderingWeight)).
+				All(ctx)
+		})
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query project channels: %w", err)
+	}
+
+	proj, err := authz.RunWithSystemBypass(ctx, "project-available-channels-profile", func(ctx context.Context) (*ent.Project, error) {
+		return r.client.Project.Get(ctx, projectID)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get project: %w", err)
 	}
@@ -712,6 +838,19 @@ func (r *threadResolver) FirstUserQuery(ctx context.Context, obj *ent.Thread) (*
 // UsageMetadata is the resolver for the usageMetadata field.
 func (r *threadResolver) UsageMetadata(ctx context.Context, obj *ent.Thread) (*biz.UsageMetadata, error) {
 	return r.threadService.UsageMetadata(ctx, obj.ID)
+}
+
+// ArchivedTracesCount is the resolver for the archivedTracesCount field.
+func (r *threadResolver) ArchivedTracesCount(ctx context.Context, obj *ent.Thread) (int, error) {
+	count, err := r.client.Trace.Query().Where(
+		trace.ThreadIDEQ(obj.ID),
+		trace.StatusEQ(trace.StatusArchived),
+	).Count(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count archived traces: %w", err)
+	}
+
+	return count, nil
 }
 
 // RootSegment is the resolver for the rootSegment field.

@@ -14,6 +14,7 @@ import (
 	"github.com/looplj/axonhub/internal/contexts"
 	"github.com/looplj/axonhub/internal/ent"
 	"github.com/looplj/axonhub/internal/ent/model"
+	entprivacy "github.com/looplj/axonhub/internal/ent/privacy"
 	"github.com/looplj/axonhub/internal/log"
 	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/looplj/axonhub/internal/server/orchestrator"
@@ -42,6 +43,7 @@ type OpenAIHandlersParams struct {
 	ChannelLimiterManager       *orchestrator.ChannelLimiterManager
 	ProviderQuotaStatusProvider orchestrator.ProviderQuotaStatusProvider
 	Client                      *ent.Client
+	SSEKeepAliveConfig          SSEKeepAliveConfig
 }
 
 type OpenAIHandlers struct {
@@ -54,6 +56,7 @@ type OpenAIHandlers struct {
 	ResponseCompletionHandlers *ChatCompletionHandlers
 	CompactHandlers            *ChatCompletionHandlers
 	EmbeddingHandlers          *ChatCompletionHandlers
+	ModerationHandlers         *ChatCompletionHandlers
 	ImageGenerationHandlers    *ChatCompletionHandlers
 	ImageEditHandlers          *ChatCompletionHandlers
 	ImageVariationHandlers     *ChatCompletionHandlers
@@ -74,7 +77,7 @@ func NewOpenAIHandlers(params OpenAIHandlersParams) *OpenAIHandlers {
 	videoInbound := openai.NewVideoInboundTransformer()
 	speechInbound := openai.NewSpeechInboundTransformer()
 
-	return &OpenAIHandlers{
+	handlers := &OpenAIHandlers{
 		ChatCompletionHandlers: &ChatCompletionHandlers{
 			ChatCompletionOrchestrator: orchestrator.NewChatCompletionOrchestrator(
 				params.ChannelService,
@@ -150,6 +153,23 @@ func NewOpenAIHandlers(params OpenAIHandlersParams) *OpenAIHandlers {
 				params.RequestService,
 				params.HttpClient,
 				openai.NewEmbeddingInboundTransformer(),
+				params.SystemService,
+				params.UsageLogService,
+				params.PromptService,
+				params.QuotaService,
+				params.PromptProtectionRuleService,
+				params.LiveStreamRegistry,
+				params.ChannelLimiterManager,
+				params.ProviderQuotaStatusProvider,
+			),
+		},
+		ModerationHandlers: &ChatCompletionHandlers{
+			ChatCompletionOrchestrator: orchestrator.NewChatCompletionOrchestrator(
+				params.ChannelService,
+				params.DefaultSelector,
+				params.RequestService,
+				params.HttpClient,
+				openai.NewModerationInboundTransformer(),
 				params.SystemService,
 				params.UsageLogService,
 				params.PromptService,
@@ -287,6 +307,21 @@ func NewOpenAIHandlers(params OpenAIHandlersParams) *OpenAIHandlers {
 			),
 		},
 	}
+
+	for _, handler := range []*ChatCompletionHandlers{
+		handlers.ChatCompletionHandlers,
+		handlers.CompletionHandlers,
+		handlers.ResponseCompletionHandlers,
+		handlers.CompactHandlers,
+		handlers.SpeechHandlers,
+		handlers.TranscriptionHandlers,
+		handlers.TranslationHandlers,
+	} {
+		handler.sseKeepAlive = params.SSEKeepAliveConfig
+		handler.sseHeartbeatFormat = sseHeartbeatOpenAI
+	}
+
+	return handlers
 }
 
 func (handlers *OpenAIHandlers) ChatCompletion(c *gin.Context) {
@@ -307,6 +342,11 @@ func (handlers *OpenAIHandlers) CompactResponse(c *gin.Context) {
 
 func (handlers *OpenAIHandlers) CreateEmbedding(c *gin.Context) {
 	handlers.EmbeddingHandlers.ChatCompletion(c)
+}
+
+// CreateModeration handles POST /v1/moderations.
+func (handlers *OpenAIHandlers) CreateModeration(c *gin.Context) {
+	handlers.ModerationHandlers.ChatCompletion(c)
 }
 
 // CreateSpeech handles POST /v1/audio/speech (text-to-speech). The response is binary audio.
@@ -639,12 +679,28 @@ func convertModelToOpenAIExtended(m *ent.Model, include map[string]bool) OpenAIM
 }
 
 func (handlers *OpenAIHandlers) writeOpenAIInternalError(c *gin.Context, requestID string, err error) {
+	_ = c.Error(err)
+
 	c.JSON(http.StatusInternalServerError, openai.OpenAIError{
 		StatusCode: http.StatusInternalServerError,
 		Detail: llm.ErrorDetail{
 			Code:      openAIErrorCodeInternalServer,
 			Message:   err.Error(),
 			Type:      openAIErrorTypeServer,
+			RequestID: requestID,
+		},
+	})
+}
+
+func (handlers *OpenAIHandlers) writeOpenAIPermissionDeniedError(c *gin.Context, requestID string, err error) {
+	_ = c.Error(err)
+
+	c.JSON(http.StatusForbidden, openai.OpenAIError{
+		StatusCode: http.StatusForbidden,
+		Detail: llm.ErrorDetail{
+			Code:      "permission_denied",
+			Message:   "insufficient permissions to access this resource",
+			Type:      "authentication_error",
 			RequestID: requestID,
 		},
 	})
@@ -684,7 +740,11 @@ func (handlers *OpenAIHandlers) RetrieveModel(c *gin.Context) {
 
 	models, err := handlers.ModelService.ListEnabledModels(ctx)
 	if err != nil {
-		handlers.writeOpenAIInternalError(c, requestID, err)
+		if errors.Is(err, entprivacy.Deny) {
+			handlers.writeOpenAIPermissionDeniedError(c, requestID, err)
+		} else {
+			handlers.writeOpenAIInternalError(c, requestID, err)
+		}
 		return
 	}
 
@@ -734,7 +794,11 @@ func (handlers *OpenAIHandlers) ListModels(c *gin.Context) {
 
 	visibleModels, err := handlers.ModelService.ListEnabledModels(ctx)
 	if err != nil {
-		handlers.writeOpenAIInternalError(c, requestID, err)
+		if errors.Is(err, entprivacy.Deny) {
+			handlers.writeOpenAIPermissionDeniedError(c, requestID, err)
+		} else {
+			handlers.writeOpenAIInternalError(c, requestID, err)
+		}
 		return
 	}
 

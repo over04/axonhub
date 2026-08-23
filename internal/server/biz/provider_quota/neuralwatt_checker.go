@@ -208,7 +208,6 @@ func convertNeuralWattSubscriptionToMap(sub *NeuralWattSubscription) map[string]
 		result["status"] = *sub.Status
 	}
 
-
 	if sub.KwhIncluded != nil {
 		result["kwh_included"] = *sub.KwhIncluded
 	}

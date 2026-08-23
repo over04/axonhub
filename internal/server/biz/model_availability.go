@@ -159,10 +159,10 @@ func (svc *ModelService) aggregateModelAvailability(ctx context.Context, modelID
 	intervalSecs := int64(intervalMinutes * 60)
 	bucketStartUnix := startTime.Unix()
 	type bucketRow struct {
-		Bucket    int64    `json:"bucket"`
-		ModelID   string   `json:"model_id"`
-		Total     int      `json:"total"`
-		Completed int      `json:"completed"`
+		Bucket     int64    `json:"bucket"`
+		ModelID    string   `json:"model_id"`
+		Total      int      `json:"total"`
+		Completed  int      `json:"completed"`
 		AvgLatency *float64 `json:"avg_latency"`
 	}
 	var rows []bucketRow

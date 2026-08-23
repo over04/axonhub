@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
 	"regexp"
 	"sort"
@@ -63,6 +64,16 @@ type paramOperation struct {
 	To         string               `json:"to,omitempty"`
 	Conditions []conditionOperation `json:"conditions,omitempty"`
 	Logic      string               `json:"logic,omitempty"`
+	// Match is the equality matcher for the array_remove mode: items of the
+	// array at Path are removed when the field at Match.Path (resolved relative
+	// to each item) equals Match.Eq.
+	Match *paramOverrideMatch `json:"match,omitempty"`
+}
+
+// paramOverrideMatch mirrors the upstream array_remove match rule.
+type paramOverrideMatch struct {
+	Path string `json:"path"`
+	Eq   any    `json:"eq"`
 }
 
 type paramOverrideReturnError struct {
@@ -181,6 +192,23 @@ func applyOverrideRequestBody(outbound *PersistentOutboundTransformer) pipeline.
 			return request, nil
 		}
 
+		// Body override operations are implemented with gjson/sjson, which silently
+		// discards a non-JSON document and rebuilds it as a fresh JSON object.
+		// Applying them to a multipart body (image edit/variation, transcription,
+		// ...) would replace the whole payload with a tiny JSON object while the
+		// Content-Type still advertises the multipart boundary, so the upstream
+		// sees a truncated form. Skip body override for non-JSON bodies.
+		if !bodyOverrideSupported(request) {
+			log.Warn(ctx, "skipping body override operations for non-JSON request body",
+				log.String("channel", channel.Name),
+				log.Int("channel_id", channel.ID),
+				log.String("content_type", requestContentType(request)),
+				log.String("api_format", request.APIFormat),
+			)
+
+			return request, nil
+		}
+
 		overrideCtx := buildParamOverrideContext(ctx, outbound, request)
 		body, err := applyParamOverride(request.Body, paramOverride, overrideCtx)
 		if err != nil {
@@ -192,6 +220,67 @@ func applyOverrideRequestBody(outbound *PersistentOutboundTransformer) pipeline.
 
 		return request, nil
 	})
+}
+
+// buildRequestHeaderMap builds a map of canonical/lowercase request headers
+// for conditional candidate matching (association "when" conditions). Sensitive
+// headers are excluded. This mirrors the upstream template engine's helper and
+// is consumed by candidates_condition.go.
+func buildRequestHeaderMap(llmReq *llm.Request) map[string]string {
+	requestHeaders := make(map[string]string)
+	if llmReq == nil || llmReq.RawRequest == nil || llmReq.RawRequest.Headers == nil {
+		return requestHeaders
+	}
+
+	for key, values := range llmReq.RawRequest.Headers {
+		if len(values) == 0 {
+			continue
+		}
+
+		if httpclient.IsSensitiveHeader(key) {
+			continue
+		}
+
+		value := values[0]
+		canonicalKey := http.CanonicalHeaderKey(key)
+		requestHeaders[canonicalKey] = value
+		requestHeaders[strings.ToLower(key)] = value
+	}
+
+	return requestHeaders
+}
+
+// requestContentType returns the effective outbound Content-Type, preferring the
+// explicit field and falling back to the header.
+func requestContentType(request *httpclient.Request) string {
+	if request == nil {
+		return ""
+	}
+
+	if request.ContentType != "" {
+		return request.ContentType
+	}
+
+	return request.Headers.Get("Content-Type")
+}
+
+// bodyOverrideSupported reports whether channel body override operations can
+// safely be applied to this request. gjson/sjson discard non-JSON documents,
+// so multipart (image edit/variation, transcription, ...) and other non-JSON
+// bodies must skip body override to avoid truncating the payload.
+func bodyOverrideSupported(request *httpclient.Request) bool {
+	contentType := requestContentType(request)
+	if contentType == "" {
+		// Unknown content type: assume JSON (the historical behavior).
+		return true
+	}
+
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+
+	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
 }
 
 func applyOverrideRequestHeaders(outbound *PersistentOutboundTransformer) pipeline.Middleware {
@@ -296,6 +385,20 @@ func tryParseOperations(paramOverride map[string]any) ([]paramOperation, bool) {
 		if logic, ok := opMap["logic"].(string); ok && strings.TrimSpace(logic) != "" {
 			op.Logic = logic
 		}
+		if match, exists := opMap["match"]; exists {
+			matchMap, ok := match.(map[string]any)
+			if !ok {
+				return nil, false
+			}
+			parsed := &paramOverrideMatch{}
+			if path, ok := matchMap["path"].(string); ok {
+				parsed.Path = path
+			}
+			if eq, exists := matchMap["eq"]; exists {
+				parsed.Eq = eq
+			}
+			op.Match = parsed
+		}
 		if conditions, exists := opMap["conditions"]; exists {
 			parsed, err := parseConditionOperations(conditions)
 			if err != nil {
@@ -379,6 +482,13 @@ func applyOperations(jsonData []byte, operations []paramOperation, conditionCont
 		case "append":
 			for _, path := range paths {
 				result, err = modifyValue(result, path, op.Value, op.KeepOrigin, false)
+				if err != nil {
+					break
+				}
+			}
+		case "array_remove":
+			for _, path := range paths {
+				result, err = applyBodyArrayRemove(result, path, op.Match)
 				if err != nil {
 					break
 				}
@@ -537,6 +647,14 @@ func resolveOperationPlaceholders(op paramOperation, contextMap map[string]any) 
 			return op, err
 		}
 		if op.Conditions[i].Value, err = resolveValuePlaceholders(op.Conditions[i].Value, contextMap); err != nil {
+			return op, err
+		}
+	}
+	if op.Match != nil {
+		if op.Match.Path, err = expandStringPlaceholders(op.Match.Path, contextMap); err != nil {
+			return op, err
+		}
+		if op.Match.Eq, err = resolveValuePlaceholders(op.Match.Eq, contextMap); err != nil {
 			return op, err
 		}
 	}
@@ -814,7 +932,7 @@ func processNegativeIndex(data []byte, path string) string {
 
 func isPathBasedOperation(mode string) bool {
 	switch mode {
-	case "delete", "set", "prepend", "append", "trim_prefix", "trim_suffix", "ensure_prefix", "ensure_suffix", "trim_space", "to_lower", "to_upper", "replace", "regex_replace", "prune_objects":
+	case "delete", "set", "prepend", "append", "array_remove", "trim_prefix", "trim_suffix", "ensure_prefix", "ensure_suffix", "trim_space", "to_lower", "to_upper", "replace", "regex_replace", "prune_objects":
 		return true
 	default:
 		return false
@@ -966,6 +1084,61 @@ func modifyArray(data []byte, path string, value any, prepend bool) ([]byte, err
 		addValue()
 	}
 	return sjson.SetBytes(data, path, next)
+}
+
+// applyBodyArrayRemove removes items from the array at path whose field at
+// match.Path (resolved relative to each item) equals match.Eq. Ported from the
+// upstream array_remove override op. A nil match or a non-array target is a
+// no-op.
+func applyBodyArrayRemove(data []byte, path string, match *paramOverrideMatch) ([]byte, error) {
+	current := gjson.GetBytes(data, path)
+	if !current.IsArray() || match == nil || strings.TrimSpace(match.Path) == "" {
+		return data, nil
+	}
+
+	next := make([]any, 0, current.Get("#").Int())
+	current.ForEach(func(_, item gjson.Result) bool {
+		if !arrayItemMatches(item, match) {
+			next = append(next, item.Value())
+		}
+		return true
+	})
+
+	return sjson.SetBytes(data, path, next)
+}
+
+// arrayItemMatches reports whether the array item's field at match.Path equals
+// match.Eq. Values are compared as strings, mirroring the upstream eq matcher;
+// a missing field never matches.
+func arrayItemMatches(item gjson.Result, match *paramOverrideMatch) bool {
+	if !item.IsObject() {
+		return false
+	}
+	field := item.Get(match.Path)
+	if !field.Exists() || field.Type == gjson.Null {
+		return false
+	}
+	return field.Raw == valueToRawEqual(match.Eq)
+}
+
+// valueToRawEqual renders a scalar match.Eq the way gjson.Raw presents a JSON
+// scalar, so equality comparisons are stable across string/number/bool.
+func valueToRawEqual(v any) string {
+	switch t := v.(type) {
+	case string:
+		b, _ := json.Marshal(t)
+		return string(b)
+	case float64:
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case bool:
+		if t {
+			return "true"
+		}
+		return "false"
+	default:
+		b, _ := json.Marshal(v)
+		return string(b)
+	}
 }
 
 func trimStringValue(data []byte, path string, value any, prefix bool) ([]byte, error) {

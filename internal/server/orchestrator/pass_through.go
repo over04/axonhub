@@ -14,7 +14,21 @@ import (
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/pipeline"
 	"github.com/looplj/axonhub/llm/streams"
+	"github.com/looplj/axonhub/llm/transformer"
 )
+
+// codexResponsesPassThroughHeaders contains Codex identity metadata that can
+// accompany a pass-through body. Keep this as an explicit allowlist: inbound
+// credentials, transport headers, and protocol-selection headers are never copied.
+var codexResponsesPassThroughHeaders = []string{
+	"X-Codex-Turn-Metadata",
+	"X-Codex-Window-Id",
+	"X-Client-Request-Id",
+	"X-Codex-Beta-Features",
+	"Session-Id",
+	"Originator",
+	"Thread-Id",
+}
 
 // isPassThroughEnabled returns true when the effective pass-through flag for the current
 // channel is enabled and both the inbound and outbound API formats are identical.
@@ -83,10 +97,13 @@ func applyPassThroughRequestBody(outbound *PersistentOutboundTransformer, system
 
 		channel := outbound.GetCurrentChannel()
 		llmReq := outbound.state.LlmRequest
+		if !outbound.allowPassThroughBody(ctx, llmReq, request) {
+			return request, nil
+		}
 
-		// Multipart audio bodies cannot be reused: the outbound transformer rebuilds the
+		// Multipart bodies cannot be reused: the outbound transformer rebuilds the
 		// multipart payload with a new boundary in Content-Type, so replaying the inbound
-		// bytes would mismatch the header, and the model field cannot be patched via sjson.
+		// bytes would mismatch the header, and form fields cannot be patched via sjson.
 		if !passThroughBodySupported(llmReq.APIFormat) {
 			return request, nil
 		}
@@ -108,6 +125,48 @@ func applyPassThroughRequestBody(outbound *PersistentOutboundTransformer, system
 		}
 
 		request.Body = body
+		outbound.state.PassThroughApplied = true
+
+		return request, nil
+	})
+}
+
+func (p *PersistentOutboundTransformer) allowPassThroughBody(ctx context.Context, llmReq *llm.Request, providerReq *httpclient.Request) bool {
+	policy, ok := p.wrapped.(transformer.PassThroughBodyPolicy)
+	if !ok {
+		return true
+	}
+
+	return policy.AllowPassThroughBody(ctx, llmReq, providerReq)
+}
+
+// applyPassThroughRequestHeaders forwards Codex identity metadata paired with
+// a pass-through body. Protocol-selection headers such as Responses Lite are
+// deliberately excluded: the Codex transformer decides whether they apply.
+func applyPassThroughRequestHeaders(outbound *PersistentOutboundTransformer) pipeline.Middleware {
+	return pipeline.OnRawRequest("pass-through-request-headers", func(_ context.Context, request *httpclient.Request) (*httpclient.Request, error) {
+		if !outbound.state.PassThroughApplied || outbound.state.LlmRequest == nil ||
+			outbound.state.LlmRequest.APIFormat != llm.APIFormatOpenAIResponse ||
+			outbound.state.LlmRequest.RawRequest == nil {
+			return request, nil
+		}
+
+		if request.Headers == nil {
+			request.Headers = make(http.Header)
+		}
+
+		inboundHeaders := outbound.state.LlmRequest.RawRequest.Headers
+		for _, header := range codexResponsesPassThroughHeaders {
+			values := inboundHeaders.Values(header)
+			if len(values) == 0 {
+				continue
+			}
+
+			request.Headers.Del(header)
+			for _, value := range values {
+				request.Headers.Add(header, value)
+			}
+		}
 
 		return request, nil
 	})
@@ -133,11 +192,14 @@ func mergePassThroughRequestBody(rawBody []byte, apiFormat llm.APIFormat, model 
 }
 
 // passThroughBodySupported reports whether the raw inbound body can safely replace the
-// outbound request body. Multipart formats (audio transcription/translation) are excluded.
+// outbound request body. Multipart formats are excluded.
 func passThroughBodySupported(apiFormat llm.APIFormat) bool {
 	//nolint:exhaustive // only multipart formats are excluded.
 	switch apiFormat {
-	case llm.APIFormatOpenAITranscription, llm.APIFormatOpenAITranslation:
+	case llm.APIFormatOpenAITranscription,
+		llm.APIFormatOpenAITranslation,
+		llm.APIFormatOpenAIImageEdit,
+		llm.APIFormatOpenAIImageVariation:
 		return false
 	default:
 		return true
@@ -151,6 +213,7 @@ func passThroughBodyNeedsModelPatch(apiFormat llm.APIFormat) bool {
 		llm.APIFormatOpenAIResponse,
 		llm.APIFormatOpenAIResponseCompact,
 		llm.APIFormatOpenAIEmbedding,
+		llm.APIFormatOpenAIModeration,
 		llm.APIFormatJinaEmbedding,
 		llm.APIFormatJinaRerank,
 		llm.APIFormatAnthropicMessage,
@@ -386,34 +449,68 @@ type passThroughChannelStream struct {
 	errRef  *error
 	cancel  context.CancelFunc
 	once    sync.Once
+	ctxDone bool
 }
 
 func (s *passThroughChannelStream) Next() bool {
-	if s.ctx != nil {
-		select {
-		case ev, ok := <-s.ch:
-			if !ok {
-				return false
-			}
+	if s.ctx == nil {
+		ev, ok := <-s.ch
+		if !ok {
+			return false
+		}
 
-			s.current = ev
+		s.current = ev
 
-			return true
-		case <-s.ctx.Done():
+		return true
+	}
+
+	if s.ctxDone || s.ctx.Err() != nil {
+		s.ctxDone = true
+
+		return s.nextBuffered()
+	}
+
+	select {
+	case ev, ok := <-s.ch:
+		if !ok {
+			return false
+		}
+
+		s.current = ev
+
+		return true
+	case <-s.ctx.Done():
+		// Client disconnect often races with the terminal event still sitting in
+		// the channel (especially the pipeline drain path under pass-through).
+		// Prefer draining already-buffered events over aborting, matching the
+		// inbound/outbound Close() rule: cancel after a complete stream is still
+		// completed.
+		s.ctxDone = true
+
+		return s.nextBuffered()
+	}
+}
+
+// nextBuffered consumes buffered events after cancellation has been observed.
+// It never blocks on the producer: the stream ends (and cancels upstream via
+// Close) at the first moment the buffer is empty or the channel is closed.
+func (s *passThroughChannelStream) nextBuffered() bool {
+	select {
+	case ev, ok := <-s.ch:
+		if !ok {
 			_ = s.Close()
 
 			return false
 		}
-	}
 
-	ev, ok := <-s.ch
-	if !ok {
+		s.current = ev
+
+		return true
+	default:
+		_ = s.Close()
+
 		return false
 	}
-
-	s.current = ev
-
-	return true
 }
 
 func (s *passThroughChannelStream) Current() *httpclient.StreamEvent { return s.current }

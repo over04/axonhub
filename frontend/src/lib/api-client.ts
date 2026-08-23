@@ -165,6 +165,22 @@ export const authApi = {
       body: data,
     }),
 
+  getInvitation: (token: string): Promise<{
+    projectName: string;
+    expiresAt: string | null;
+    maxUses: number;
+    remainingUses: number;
+  }> => apiRequest(`/auth/invitations/${encodeURIComponent(token)}`),
+
+  registerInvitation: (
+    token: string,
+    data: { email: string; password: string; firstName: string; lastName: string }
+  ): Promise<{ user: AuthUser; token: string }> =>
+    apiRequest(`/auth/invitations/${encodeURIComponent(token)}/register`, {
+      method: 'POST',
+      body: data,
+    }),
+
   playgroundModels: (): Promise<{
     models: {
       id: string;

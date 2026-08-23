@@ -65,4 +65,3 @@ func TestChannelService_ShouldRunModelSync_DailyInterval(t *testing.T) {
 	require.False(t, svc.shouldRunModelSync(sameWindow, AutoSyncFrequencyOneDay))
 	require.True(t, svc.shouldRunModelSync(nextWindow, AutoSyncFrequencyOneDay))
 }
-

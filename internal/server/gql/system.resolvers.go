@@ -140,16 +140,8 @@ func (r *mutationResolver) CompleteAutoDisableChannelOnboarding(ctx context.Cont
 }
 
 // UpdateSystemChannelSettings is the resolver for the updateSystemChannelSettings field.
-func (r *mutationResolver) UpdateSystemChannelSettings(ctx context.Context, input biz.SystemChannelSettings) (bool, error) {
-	setting := *r.systemService.ChannelSettingOrDefault(ctx)
-	if input.Probe.Frequency != "" {
-		setting.Probe = input.Probe
-	}
-	if input.AutoSync.Frequency != "" {
-		setting.AutoSync = input.AutoSync
-	}
-
-	err := r.systemService.SetChannelSetting(ctx, setting)
+func (r *mutationResolver) UpdateSystemChannelSettings(ctx context.Context, input biz.UpdateSystemChannelSettings) (bool, error) {
+	err := r.systemService.UpdateChannelSetting(ctx, input)
 	if err != nil {
 		return false, fmt.Errorf("failed to update channel setting: %w", err)
 	}
@@ -188,8 +180,9 @@ func (r *mutationResolver) UpdateQuotaEnforcementSettings(ctx context.Context, i
 		return false, fmt.Errorf("failed to read current quota enforcement settings: %w", err)
 	}
 	newSettings := biz.QuotaEnforcementSettings{
-		Enabled: current.Enabled,
-		Mode:    current.Mode,
+		Enabled:           current.Enabled,
+		Mode:              current.Mode,
+		AllowedChannelIDs: current.AllowedChannelIDs,
 	}
 	if input.Enabled != nil {
 		newSettings.Enabled = *input.Enabled
@@ -197,10 +190,30 @@ func (r *mutationResolver) UpdateQuotaEnforcementSettings(ctx context.Context, i
 	if input.Mode != nil {
 		newSettings.Mode = *input.Mode
 	}
+	if input.AllowedChannelIDs != nil {
+		newSettings.AllowedChannelIDs = objects.IntGuids(input.AllowedChannelIDs)
+	}
 
 	err = r.systemService.SetQuotaEnforcementSettings(ctx, newSettings)
 	if err != nil {
 		return false, fmt.Errorf("failed to update quota enforcement settings: %w", err)
+	}
+
+	return true, nil
+}
+
+// UpdateProviderQuotaCollectionSettings is the resolver for the updateProviderQuotaCollectionSettings field.
+func (r *mutationResolver) UpdateProviderQuotaCollectionSettings(ctx context.Context, input UpdateProviderQuotaCollectionSettingsInput) (bool, error) {
+	providers := make([]biz.ProviderQuotaCollectionProvider, 0, len(input.Providers))
+	for _, provider := range input.Providers {
+		providers = append(providers, biz.ProviderQuotaCollectionProvider{
+			Provider: provider.Provider,
+			Enabled:  provider.Enabled,
+		})
+	}
+
+	if err := r.systemService.UpdateProviderQuotaCollectionSettings(ctx, input.Enabled, providers); err != nil {
+		return false, fmt.Errorf("failed to update provider quota collection settings: %w", err)
 	}
 
 	return true, nil
@@ -214,11 +227,15 @@ func (r *mutationResolver) UpdateSecuritySettings(ctx context.Context, input Upd
 	}
 
 	newSettings := biz.SecuritySettings{
-		BlockedIPs: current.BlockedIPs,
+		BlockedIPs:              current.BlockedIPs,
+		ShowRequestLogIPBanIcon: current.ShowRequestLogIPBanIcon,
 	}
 
 	if input.BlockedIPs != nil {
 		newSettings.BlockedIPs = input.BlockedIPs
+	}
+	if input.ShowRequestLogIPBanIcon != nil {
+		newSettings.ShowRequestLogIPBanIcon = *input.ShowRequestLogIPBanIcon
 	}
 
 	err = r.systemService.SetSecuritySettings(ctx, newSettings)
@@ -253,6 +270,23 @@ func (r *mutationResolver) CheckProviderQuotas(ctx context.Context) (bool, error
 	}
 
 	r.providerQuotaService.ManualCheck(ctx)
+
+	return true, nil
+}
+
+// ResetChannelQuotaNow is the resolver for the resetChannelQuotaNow field.
+func (r *mutationResolver) ResetChannelQuotaNow(ctx context.Context, channelID objects.GUID) (bool, error) {
+	if !scopes.UserHasScope(ctx, scopes.ScopeWriteChannels) {
+		return false, fmt.Errorf("permission denied: requires write:channels scope")
+	}
+
+	if r.providerQuotaService == nil {
+		return false, fmt.Errorf("provider quota service is not available")
+	}
+
+	if err := r.providerQuotaService.ResetChannelQuotaNow(ctx, channelID.ID); err != nil {
+		return false, fmt.Errorf("failed to reset channel quota: %w", err)
+	}
 
 	return true, nil
 }
@@ -344,6 +378,19 @@ func (r *mutationResolver) ClearCache(ctx context.Context, input ClearCacheInput
 		Message: "cache cleared successfully",
 		Targets: targets,
 	}, nil
+}
+
+// Providers is the resolver for the providers field.
+func (r *providerQuotaCollectionSettingsResolver) Providers(ctx context.Context, obj *biz.ProviderQuotaCollectionSettings) ([]*biz.ProviderQuotaCollectionProvider, error) {
+	providers := make([]*biz.ProviderQuotaCollectionProvider, 0, len(obj.Providers))
+	for _, providerType := range biz.SupportedProviderQuotaTypes() {
+		providers = append(providers, &biz.ProviderQuotaCollectionProvider{
+			Provider: providerType,
+			Enabled:  obj.Providers[providerType],
+		})
+	}
+
+	return providers, nil
 }
 
 // PreviewGcCleanup is the resolver for the previewGcCleanup field.
@@ -481,8 +528,8 @@ func (r *queryResolver) SystemVersion(ctx context.Context) (*build.Info, error) 
 }
 
 // CheckForUpdate is the resolver for the checkForUpdate field.
-func (r *queryResolver) CheckForUpdate(ctx context.Context) (*VersionCheck, error) {
-	result, err := r.systemService.CheckForUpdate(ctx)
+func (r *queryResolver) CheckForUpdate(ctx context.Context, includeBeta bool) (*VersionCheck, error) {
+	result, err := r.systemService.CheckForUpdate(ctx, includeBeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check for update: %w", err)
 	}
@@ -518,6 +565,11 @@ func (r *queryResolver) VideoStorageSettings(ctx context.Context) (*biz.VideoSto
 // QuotaEnforcementSettings is the resolver for the quotaEnforcementSettings field.
 func (r *queryResolver) QuotaEnforcementSettings(ctx context.Context) (*biz.QuotaEnforcementSettings, error) {
 	return r.systemService.QuotaEnforcementSettings(ctx)
+}
+
+// ProviderQuotaCollectionSettings is the resolver for the providerQuotaCollectionSettings field.
+func (r *queryResolver) ProviderQuotaCollectionSettings(ctx context.Context) (*biz.ProviderQuotaCollectionSettings, error) {
+	return r.systemService.ProviderQuotaCollectionSettings(ctx)
 }
 
 // SecuritySettings is the resolver for the securitySettings field.
@@ -606,6 +658,54 @@ func (r *queryResolver) GetCacheDiagnostics(ctx context.Context, input *GetCache
 	}, nil
 }
 
+// AllowedChannelIDs is the resolver for the allowedChannelIDs field.
+func (r *quotaEnforcementSettingsResolver) AllowedChannelIDs(ctx context.Context, obj *biz.QuotaEnforcementSettings) ([]*objects.GUID, error) {
+	return lo.Map(obj.AllowedChannelIDs, func(id int, _ int) *objects.GUID {
+		return &objects.GUID{Type: "Channel", ID: id}
+	}), nil
+}
+
+// StreamInterruptionDefault is the resolver for the streamInterruptionDefault field.
+func (r *retryPolicyResolver) StreamInterruptionDefault(ctx context.Context, obj *biz.RetryPolicy) (string, error) {
+	panic(fmt.Errorf("not implemented: StreamInterruptionDefault - streamInterruptionDefault"))
+}
+
+// StreamInterruptionDefault is the resolver for the streamInterruptionDefault field.
+func (r *updateRetryPolicyInputResolver) StreamInterruptionDefault(ctx context.Context, obj *biz.RetryPolicy, data *string) error {
+	panic(fmt.Errorf("not implemented: StreamInterruptionDefault - streamInterruptionDefault"))
+}
+
+// ProviderQuotaCollectionSettings returns ProviderQuotaCollectionSettingsResolver implementation.
+func (r *Resolver) ProviderQuotaCollectionSettings() ProviderQuotaCollectionSettingsResolver {
+	return &providerQuotaCollectionSettingsResolver{r}
+}
+
+// QuotaEnforcementSettings returns QuotaEnforcementSettingsResolver implementation.
+func (r *Resolver) QuotaEnforcementSettings() QuotaEnforcementSettingsResolver {
+	return &quotaEnforcementSettingsResolver{r}
+}
+
+// RetryPolicy returns RetryPolicyResolver implementation.
+func (r *Resolver) RetryPolicy() RetryPolicyResolver { return &retryPolicyResolver{r} }
+
+// UpdateRetryPolicyInput returns UpdateRetryPolicyInputResolver implementation.
+func (r *Resolver) UpdateRetryPolicyInput() UpdateRetryPolicyInputResolver {
+	return &updateRetryPolicyInputResolver{r}
+}
+
+type providerQuotaCollectionSettingsResolver struct{ *Resolver }
+type quotaEnforcementSettingsResolver struct{ *Resolver }
+type retryPolicyResolver struct{ *Resolver }
+type updateRetryPolicyInputResolver struct{ *Resolver }
+
+// !!! WARNING !!!
+// The code below was going to be deleted when updating resolvers. It has been copied here so you have
+// one last chance to move it out of harms way if you want. There are two reasons this happens:
+//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
+//    it when you're done.
+//  - You have helper methods in this file. Move them out to keep these resolver files clean.
+/*
+	<<<<<<< HEAD
 // StreamInterruptionDefault is the resolver for the streamInterruptionDefault field.
 func (r *retryPolicyResolver) StreamInterruptionDefault(ctx context.Context, obj *biz.RetryPolicy) (string, error) {
 	if obj == nil {
@@ -641,6 +741,4 @@ func (r *Resolver) RetryPolicy() RetryPolicyResolver { return &retryPolicyResolv
 func (r *Resolver) UpdateRetryPolicyInput() UpdateRetryPolicyInputResolver {
 	return &updateRetryPolicyInputResolver{r}
 }
-
-type retryPolicyResolver struct{ *Resolver }
-type updateRetryPolicyInputResolver struct{ *Resolver }
+*/

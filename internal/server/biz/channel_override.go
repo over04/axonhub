@@ -32,6 +32,7 @@ var supportedParamOverrideOperationModes = map[string]struct{}{
 	"move_header":   {},
 	"pass_headers":  {},
 	"sync_fields":   {},
+	"array_remove":  {},
 }
 
 // GetParamOverrideMap returns the parsed new-api compatible parameter override map.
@@ -145,6 +146,24 @@ func validateParamOverrideOperation(index int, mode string, op map[string]any) e
 		return nil
 	case "pass_headers":
 		return validateParamOverridePassHeadersValue(index, op["value"])
+	case "array_remove":
+		// array_remove filters items out of the array at `path` by a match rule:
+		// each item is removed when the field at match.path (resolved relative to
+		// the item) equals match.eq. Ported from upstream's array_remove override op.
+		if err := requireStringField(index, mode, op, "path"); err != nil {
+			return err
+		}
+		match, ok := op["match"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("param override operation %d array_remove match object is required", index)
+		}
+		if strings.TrimSpace(stringField(match, "path")) == "" {
+			return fmt.Errorf("param override operation %d array_remove match.path is required", index)
+		}
+		if !matchHasEq(match) {
+			return fmt.Errorf("param override operation %d array_remove match.eq is required", index)
+		}
+		return nil
 	case "sync_fields":
 		if err := requireStringField(index, mode, op, "from"); err != nil {
 			return err
@@ -179,6 +198,20 @@ func requireValueField(index int, mode string, op map[string]any, field string) 
 func stringField(op map[string]any, field string) string {
 	value, _ := op[field].(string)
 	return value
+}
+
+// matchHasEq reports whether the array_remove match rule carries a non-nil eq value.
+// eq may be any scalar (string/number/bool); nil is invalid.
+func matchHasEq(match map[string]any) bool {
+	eq, exists := match["eq"]
+	if !exists || eq == nil {
+		return false
+	}
+	switch eq.(type) {
+	case string, float64, bool:
+		return true
+	}
+	return false
 }
 
 func validateParamOverrideLogic(index int, op map[string]any) error {

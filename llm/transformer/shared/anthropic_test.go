@@ -19,14 +19,19 @@ func TestDecodeAnthropicSignature(t *testing.T) {
 			expected:  nil,
 		},
 		{
-			name:      "empty string",
+			name:      "empty string - rejected",
 			signature: new(""),
-			expected:  new(""),
+			expected:  nil,
 		},
 		{
-			name:      "anthropic-like signature (Eq prefix)",
+			name:      "Eq prefix without model marker - rejected",
 			signature: new("EqQBCAEDEgQIAhAEGAAgAigBMOzOAg=="),
-			expected:  new("EqQBCAEDEgQIAhAEGAAgAigBMOzOAg=="),
+			expected:  nil,
+		},
+		{
+			name:      "decoded payload with Claude model marker",
+			signature: new(realAnthropicSignature),
+			expected:  new(realAnthropicSignature),
 		},
 		{
 			name:      "openai-like signature (gAAA prefix) - rejected",
@@ -36,6 +41,11 @@ func TestDecodeAnthropicSignature(t *testing.T) {
 		{
 			name:      "gemini-like protobuf base64 - rejected",
 			signature: new(base64.StdEncoding.EncodeToString([]byte{0x0a, 0x04, 0x74, 0x65, 0x73, 0x74})),
+			expected:  nil,
+		},
+		{
+			name:      "unknown standard base64 - rejected",
+			signature: new("SGVsbG8="),
 			expected:  nil,
 		},
 	}
@@ -90,7 +100,7 @@ func TestEncodeAnthropicSignature(t *testing.T) {
 }
 
 func TestAnthropicEncodeDecodeRoundTrip(t *testing.T) {
-	original := new("EqQBCAEDEgQIAhAEGAAgAigBMOzOAg==")
+	original := new(realAnthropicSignature)
 
 	encoded := EncodeAnthropicSignature(original)
 	require.NotNil(t, encoded)

@@ -115,6 +115,7 @@ These operations modify the JSON request body.
 | `delete` | `path` | Deletes `path`. |
 | `append` | `path`, `value` | Appends to an array, appends to a string, or merges object fields into an object. |
 | `prepend` | `path`, `value` | Prepends to an array or string, or merges object fields into an object. |
+| `array_remove` | `path`, `match` | Removes items from the array at `path` whose field at `match.path` (resolved relative to each item) equals `match.eq`. Missing/non-array targets are skipped. |
 | `copy` | `from`, `to` | Copies a body value from `from` to `to`. |
 | `move` | `from`, `to` | Moves a body value from `from` to `to`. |
 | `replace` | `path`, `from`, `to` | Replaces all string matches in the target string. |

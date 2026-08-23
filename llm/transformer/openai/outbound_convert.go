@@ -94,6 +94,23 @@ func RequestFromLLM(r *llm.Request, reasoningField ReasoningField) *Request {
 	return req
 }
 
+// applyReasoningEffortMapping replaces reasoning_effort according to a per-channel mapping.
+// The first entry whose From matches the effort value wins; values not in the list (or an
+// empty/nil list) pass through unchanged. This lets non-standard OpenAI-compatible providers
+// (ollama, opencode, evolink, self-hosted gateways) opt in to conversions like xhigh→max
+// without affecting standard OpenAI channels. Applied in OutboundTransformer.TransformRequest.
+func applyReasoningEffortMapping(effort string, mappings []llm.ReasoningEffortMapping) string {
+	if len(mappings) == 0 || effort == "" {
+		return effort
+	}
+	for _, m := range mappings {
+		if m.From == effort {
+			return m.To
+		}
+	}
+	return effort
+}
+
 // MessageFromLLM creates OpenAI Message from unified llm.Message.
 // Defaults to ReasoningFieldAll to preserve both reasoning fields.
 func MessageFromLLM(m llm.Message) Message {
@@ -169,6 +186,16 @@ func MessageFromLLMWithConfig(m llm.Message, reasoningField ReasoningField) Mess
 		})
 	}
 
+	// An assistant turn that only requests tool calls has no content to send, and
+	// a message whose parts were all filtered out (e.g. compaction) is left with an
+	// empty part list. Both cases would reach the wire as a missing or null content
+	// field, which the OpenAI spec permits but stricter OpenAI-compatible upstreams
+	// reject because their schema only accepts a string or an array. Normalize to an
+	// empty string, which every implementation accepts and OpenAI treats as no content.
+	if len(msg.ToolCalls) > 0 && msg.Content.Content == nil && len(msg.Content.MultipleContent) == 0 {
+		msg.Content = MessageContent{Content: lo.ToPtr("")}
+	}
+
 	// Convert Annotations
 	if len(m.Annotations) > 0 {
 		msg.Annotations = lo.Map(m.Annotations, func(a llm.Annotation, _ int) Annotation {
@@ -220,7 +247,7 @@ func MessageContentFromLLM(c llm.MessageContent) MessageContent {
 // MessageContentPartFromLLM creates OpenAI MessageContentPart from unified llm.MessageContentPart.
 func MessageContentPartFromLLM(p llm.MessageContentPart) MessageContentPart {
 	part := MessageContentPart{
-		Type: p.Type,
+		Type: normalizeContentPartType(p.Type),
 		Text: p.Text,
 	}
 
@@ -245,6 +272,20 @@ func MessageContentPartFromLLM(p llm.MessageContentPart) MessageContentPart {
 	}
 
 	return part
+}
+
+// normalizeContentPartType maps Responses-only text part types onto the plain
+// "text" type used by Chat Completions. The Responses API distinguishes input
+// from output text, but Chat Completions has a single text part type, and strict
+// OpenAI-compatible upstreams reject the ones they do not know. Types that Chat
+// Completions does understand (image_url, video_url, input_audio, ...) pass through.
+func normalizeContentPartType(partType string) string {
+	switch partType {
+	case "input_text", "output_text":
+		return "text"
+	default:
+		return partType
+	}
 }
 
 // ToolFromLLM creates OpenAI Tool from unified llm.Tool.
