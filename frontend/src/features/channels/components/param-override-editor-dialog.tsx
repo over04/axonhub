@@ -54,6 +54,9 @@ type ParamRule = {
   keep_origin: boolean;
   logic: string;
   conditions: ParamRuleCondition[];
+  // match is the array_remove match rule {path, eq}; preserved verbatim so the
+  // visual editor never silently drops it (editing happens in JSON mode).
+  match: { path?: string; eq?: unknown } | null;
 };
 
 export type ParamOverrideEditorDialogProps = {
@@ -92,9 +95,8 @@ const OPERATION_MODE_OPTIONS = [
   { label: 'channels.paramOverride.operations.deleteHeader', value: 'delete_header' },
   { label: 'channels.paramOverride.operations.copyHeader', value: 'copy_header' },
   { label: 'channels.paramOverride.operations.moveHeader', value: 'move_header' },
+  { label: 'channels.paramOverride.operations.arrayRemove', value: 'array_remove' },
 ];
-
-const OPERATION_MODE_VALUES = new Set(OPERATION_MODE_OPTIONS.map((o) => o.value));
 
 const OPERATION_MODE_LABEL_MAP = OPERATION_MODE_OPTIONS.reduce<Record<string, string>>((acc, item) => {
   acc[item.value] = item.label;
@@ -393,13 +395,25 @@ const normalizeOperation = (operation: Record<string, unknown> = {}): ParamRule 
   id: nextLocalId(),
   description: typeof operation.description === 'string' ? operation.description : '',
   path: typeof operation.path === 'string' ? operation.path : '',
-  mode: OPERATION_MODE_VALUES.has(operation.mode as string) ? (operation.mode as string) : 'set',
+  // Preserve unknown modes verbatim (e.g. array_remove) instead of silently
+  // rewriting them to 'set' — a silent downgrade would corrupt stored configs.
+  mode: typeof operation.mode === 'string' && operation.mode !== '' ? operation.mode : 'set',
   value_text: toValueText(operation.value),
   keep_origin: operation.keep_origin === true,
   from: typeof operation.from === 'string' ? operation.from : '',
   to: typeof operation.to === 'string' ? operation.to : '',
   logic: String(operation.logic || 'OR').toUpperCase() === 'AND' ? 'AND' : 'OR',
   conditions: Array.isArray(operation.conditions) ? (operation.conditions as Record<string, unknown>[]).map(normalizeCondition) : [],
+  match:
+    operation.match && typeof operation.match === 'object'
+      ? {
+          path:
+            typeof (operation.match as Record<string, unknown>).path === 'string'
+              ? String((operation.match as Record<string, unknown>).path)
+              : undefined,
+          eq: (operation.match as Record<string, unknown>).eq,
+        }
+      : null,
 });
 
 const createDefaultOperation = (): ParamRule => normalizeOperation({ mode: 'set' });
@@ -866,6 +880,9 @@ const buildOperationsJson = (
     if (meta.pathAlias) {
       if (!payload.from && pathValue) payload.from = pathValue;
       if (!payload.to && pathValue) payload.to = pathValue;
+    }
+    if (operation.match && (operation.match.path || operation.match.eq !== undefined)) {
+      payload.match = operation.match;
     }
     const conditions = operation.conditions.map(buildConditionPayload).filter(Boolean);
     if (conditions.length > 0) {

@@ -483,6 +483,7 @@
   "channels.paramOverride.operations.deleteHeader": "Delete Request Header",
   "channels.paramOverride.operations.copyHeader": "Copy Request Header",
   "channels.paramOverride.operations.moveHeader": "Move Request Header",
+  "channels.paramOverride.operations.arrayRemove": "Remove Array Items",
   "channels.paramOverride.conditionModes.full": "Exact Match",
   "channels.paramOverride.conditionModes.prefix": "Prefix",
   "channels.paramOverride.conditionModes.suffix": "Suffix",

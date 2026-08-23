@@ -480,6 +480,7 @@
   "channels.paramOverride.operations.deleteHeader": "删除请求头",
   "channels.paramOverride.operations.copyHeader": "复制请求头",
   "channels.paramOverride.operations.moveHeader": "移动请求头",
+  "channels.paramOverride.operations.arrayRemove": "移除数组条目",
   "channels.paramOverride.conditionModes.full": "完全匹配",
   "channels.paramOverride.conditionModes.prefix": "前缀",
   "channels.paramOverride.conditionModes.suffix": "后缀",
