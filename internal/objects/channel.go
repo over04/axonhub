@@ -1,6 +1,9 @@
 package objects
 
 import (
+	"fmt"
+	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,7 +14,8 @@ import (
 
 // ChannelEndpoint represents an outbound API endpoint configuration within a Channel.
 // Each endpoint specifies the upstream API format and an optional custom path override.
-// Within a single channel, api_format must be unique.
+// Within a single channel, api_format must be unique after legacy normalization.
+// Responses uses distinct HTTP/WS formats; Transport remains a legacy read/input field.
 type ChannelEndpoint struct {
 	APIFormat string `json:"api_format"`
 	Path      string `json:"path,omitempty"`
@@ -52,14 +56,41 @@ type TransformOptions struct {
 	// ReplaceDeveloperRoleWithSystem replaces developer role with system in messages for Bailian compatibility.
 	ReplaceDeveloperRoleWithSystem bool `json:"replaceDeveloperRoleWithSystem"`
 
-	// ReasoningEffortMapping maps inbound reasoning_effort values to outbound ones for
-	// non-standard OpenAI-compatible providers. The first entry whose From matches the
-	// effort value wins; values not in the list pass through unchanged.
-	// e.g. [{"from":"xhigh","to":"max"}] converts Anthropic's internal "xhigh" (mapped
-	// from "max") back to "max" for providers that only recognize "max".
-	// Consumed by the OpenAI-shared outbound transformer. Other transformers ignore it
-	// for now. Strong-typed to mirror ModelMapping; see llm.ReasoningEffortMapping.
+	// ReasoningEffortMapping maps inbound reasoning_effort values to outbound ones
+	// for non-standard providers. The first entry whose From matches the effort value
+	// wins; values not in the list pass through unchanged.
+	// e.g. [{"from":"xhigh","to":"max"}] converts the unified "xhigh" level to "max"
+	// for providers that only recognize "max".
+	// Applied centrally by the orchestrator on the unified request before the outbound
+	// transformer runs, so it affects every outbound protocol (chat completions,
+	// responses, anthropic messages) for all clients. Strong-typed to mirror
+	// ModelMapping; see llm.ReasoningEffortMapping.
 	ReasoningEffortMapping []llm.ReasoningEffortMapping `json:"reasoningEffortMapping,omitempty"`
+}
+
+// ModelProtocol force-specifies the outbound API protocols available for one model
+// of a channel. The channel must already have an endpoint configured for each
+// listed api_format (validated on save). When a request for the model arrives:
+// if the client's protocol is in the list, that endpoint is used directly (no
+// conversion); otherwise the first configured protocol is used and the request is
+// converted through the unified pipeline.
+type ModelProtocol struct {
+	// Model is the channel-facing model name (exact match against the request model).
+	Model string `json:"model"`
+
+	// APIFormats are the allowed outbound api_format values, in priority order.
+	APIFormats []string `json:"apiFormats"`
+
+	// Enabled controls whether this override participates in endpoint selection.
+	// A nil value is treated as enabled for backwards compatibility with entries
+	// written before the flag was introduced.
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// IsEnabled reports whether this model protocol override is active. Missing
+// enabled values in older persisted settings intentionally default to true.
+func (m ModelProtocol) IsEnabled() bool {
+	return m.Enabled == nil || *m.Enabled
 }
 
 type ChannelSettings struct {
@@ -141,6 +172,61 @@ type ChannelSettings struct {
 	// complete-event synthesis require the transform pipeline, so the policy is
 	// forced to "none" in that case.
 	StreamInterruption *StreamInterruptionPolicy `json:"streamInterruption,omitempty"`
+
+	// ModelProtocols force-specifies the outbound protocols for specific models of
+	// this channel. Each entry's apiFormats must reference api_formats the channel
+	// already has endpoints for. When set for a model, endpoint selection is
+	// restricted to those formats; otherwise all channel endpoints are eligible.
+	ModelProtocols []ModelProtocol `json:"modelProtocols,omitempty"`
+
+	// ProviderQuota holds provider-specific quota collection credentials and
+	// options. Fields are sensitive (e.g. auth cookies) and only exposed to
+	// operators holding channel write permission.
+	ProviderQuota *ChannelProviderQuotaSettings `json:"providerQuota,omitempty"`
+
+	QuotaRoutingMode QuotaRoutingMode `json:"quotaRoutingMode,omitempty"`
+}
+
+// ChannelProviderQuotaSettings groups per-provider quota collection settings.
+type ChannelProviderQuotaSettings struct {
+	// CommandCode holds the quota collection settings for Command Code channels.
+	CommandCode *CommandCodeQuotaSettings `json:"commandCode,omitempty"`
+
+	// Ollama holds the quota collection settings for Ollama Cloud channels.
+	Ollama *OllamaQuotaSettings `json:"ollama,omitempty"`
+}
+
+// CommandCodeQuotaSettings holds the fallback credential used to query the
+// Command Code account quota. Quota is normally read with the channel API key
+// (the /alpha/billing/* endpoints, the same key the official CLI uses);
+// AuthCookie is only used when that key cannot reach the billing API, and is
+// the commandcode.ai session cookie (a "__Secure-commandcode_prod_.session_token"
+// style value) sent to the Studio-wide internal billing endpoints.
+type CommandCodeQuotaSettings struct {
+	AuthCookie string `json:"authCookie,omitempty"`
+}
+
+// String redacts the auth cookie so settings never leak it into logs.
+func (s CommandCodeQuotaSettings) String() string {
+	if s.AuthCookie == "" {
+		return "CommandCodeQuotaSettings{AuthCookie: \"\"}"
+	}
+	return "CommandCodeQuotaSettings{AuthCookie: <redacted>}"
+}
+
+// OllamaQuotaSettings holds the credentials used to query the Ollama Cloud
+// account quota. AuthCookie is the ollama.com Web session cookie (a
+// "__Secure-session=..." value) sent to the Plan & Billing settings page.
+type OllamaQuotaSettings struct {
+	AuthCookie string `json:"authCookie,omitempty"`
+}
+
+// String redacts the auth cookie so settings never leak it into logs.
+func (s OllamaQuotaSettings) String() string {
+	if s.AuthCookie == "" {
+		return "OllamaQuotaSettings{AuthCookie: \"\"}"
+	}
+	return "OllamaQuotaSettings{AuthCookie: <redacted>}"
 }
 
 // StreamInterruptionPolicy controls how the channel handles upstream SSE
@@ -212,11 +298,27 @@ type ChannelCredentials struct {
 	// When multiple keys are provided, they will be used in a round-robin fashion.
 	APIKeys []string `json:"apiKeys,omitempty"`
 
+	// VertexAPIKeys contains the project-bound credentials used by Gemini Vertex.
+	// The project and region must remain paired with the API key when keys rotate.
+	VertexAPIKeys []VertexAPIKey `json:"vertexApiKeys,omitempty"`
+
+	// ManagementAPIKey is an optional provider management/console API key used only
+	// for server-side quota checks (e.g. ZenMux). It is never attached to inference
+	// requests and never exposed to clients beyond credential write APIs.
+	ManagementAPIKey string `json:"managementApiKey,omitempty"`
+
 	// Azure configuration for the channel.
 	Azure *AzureCredential `json:"azure,omitempty"`
 
 	// GCP is the GCP credentials for the channel.
 	GCP *GCPCredential `json:"gcp,omitempty"`
+}
+
+// VertexAPIKey is a Gemini Vertex API key bound to its Google Cloud resource.
+type VertexAPIKey struct {
+	ProjectID string `json:"projectID"`
+	APIKey    string `json:"apiKey"`
+	Region    string `json:"region"`
 }
 
 // GetAllAPIKeys returns all API keys for the channel, combining APIKey and APIKeys fields.
@@ -235,6 +337,12 @@ func (c *ChannelCredentials) GetAllAPIKeys() []string {
 
 	// Add new APIKeys
 	keys = append(keys, c.APIKeys...)
+
+	for _, credential := range c.VertexAPIKeys {
+		if credential.APIKey != "" {
+			keys = append(keys, credential.APIKey)
+		}
+	}
 
 	return keys
 }
@@ -275,6 +383,20 @@ func (c *ChannelCredentials) GetEnabledCredentialRefs(disabledKeys []DisabledAPI
 // GetEnabledAPIKeys returns API keys that are not disabled.
 func (c *ChannelCredentials) GetEnabledAPIKeys(disabledKeys []DisabledAPIKey) []string {
 	return filterDisabled(c.GetAllAPIKeys(), disabledKeys)
+}
+
+func (c *ChannelCredentials) VertexAPIKey(apiKey string) (VertexAPIKey, bool) {
+	if c == nil {
+		return VertexAPIKey{}, false
+	}
+
+	for _, credential := range c.VertexAPIKeys {
+		if credential.APIKey == apiKey {
+			return credential, true
+		}
+	}
+
+	return VertexAPIKey{}, false
 }
 
 // filterDisabled drops every candidate that carries an active disable record.
@@ -371,13 +493,70 @@ const (
 	CapabilityPolicyForbid    CapabilityPolicy = "forbid"
 )
 
+type APIKeyAutoDisableMode string
+
+const (
+	APIKeyAutoDisableModeInherit APIKeyAutoDisableMode = "inherit"
+	APIKeyAutoDisableModeCustom  APIKeyAutoDisableMode = "custom"
+	APIKeyAutoDisableModeOff     APIKeyAutoDisableMode = "off"
+)
+
+// MarshalGQL writes a GraphQL enum value. The zero value is unset and must be
+// null; an empty string is not a valid APIKeyAutoDisableMode.
+func (e APIKeyAutoDisableMode) MarshalGQL(w io.Writer) {
+	if e == "" {
+		_, _ = io.WriteString(w, "null")
+		return
+	}
+	_, _ = io.WriteString(w, strconv.Quote(string(e)))
+}
+
+// UnmarshalGQL reads a GraphQL enum or null. Null stays the unset zero value.
+func (e *APIKeyAutoDisableMode) UnmarshalGQL(v any) error {
+	if v == nil {
+		*e = ""
+		return nil
+	}
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("APIKeyAutoDisableMode must be a string")
+	}
+	*e = APIKeyAutoDisableMode(str)
+	return nil
+}
+
 type ChannelPolicies struct {
 	Stream CapabilityPolicy `json:"stream,omitempty"`
 
+	// APIKeyAutoDisableMode selects how this channel combines with the global
+	// auto-disable rules: inherit (global only), custom (channel first, then
+	// global), or off (neither layer). Empty is inferred from whether rules exist.
+	APIKeyAutoDisableMode APIKeyAutoDisableMode `json:"apiKeyAutoDisableMode,omitempty"`
+
 	// APIKeyAutoDisableRules are the channel's own auto-disable rules. They are
-	// evaluated before the global retry policy and, when one matches, own the
-	// failure outright. Channels without rules fall back to the global policy.
+	// evaluated before the global retry policy when the mode is custom, and the
+	// first match owns the failure. Unmatched custom failures fall back to global.
 	APIKeyAutoDisableRules []APIKeyAutoDisableRule `json:"apiKeyAutoDisableRules,omitempty"`
+}
+
+// EffectiveAutoDisableMode returns the mode used at evaluation time.
+func (p ChannelPolicies) EffectiveAutoDisableMode() APIKeyAutoDisableMode {
+	switch p.APIKeyAutoDisableMode {
+	case APIKeyAutoDisableModeOff:
+		return APIKeyAutoDisableModeOff
+	case APIKeyAutoDisableModeCustom:
+		if len(p.APIKeyAutoDisableRules) == 0 {
+			return APIKeyAutoDisableModeInherit
+		}
+		return APIKeyAutoDisableModeCustom
+	case APIKeyAutoDisableModeInherit:
+		return APIKeyAutoDisableModeInherit
+	default:
+		if len(p.APIKeyAutoDisableRules) > 0 {
+			return APIKeyAutoDisableModeCustom
+		}
+		return APIKeyAutoDisableModeInherit
+	}
 }
 
 type APIKeyAutoDisableAction string

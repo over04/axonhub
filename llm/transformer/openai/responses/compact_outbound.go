@@ -33,7 +33,7 @@ func (t *OutboundTransformer) transformCompactRequest(
 		PromptCacheKey: llmReq.Compact.PromptCacheKey,
 	}
 
-	body, err := json.Marshal(payload)
+	body, err := marshalCompactRequestPayload(payload, llmReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal compact request: %w", err)
 	}
@@ -92,7 +92,7 @@ func (t *OutboundTransformer) transformCompactResponse(
 		return nil, fmt.Errorf("failed to unmarshal compact response: %w", err)
 	}
 
-	outputMessages, err := convertInputToMessages(&Input{Items: compactResp.Output})
+	outputMessages, err := convertCompactInputToMessages(&Input{Items: compactResp.Output})
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert compact response output: %w", err)
 	}

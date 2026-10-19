@@ -17,6 +17,7 @@ import (
 	"github.com/looplj/axonhub/internal/ent/hook"
 	"github.com/looplj/axonhub/internal/objects"
 	"github.com/looplj/axonhub/internal/pkg/xcache"
+	"github.com/looplj/axonhub/internal/pkg/xerrors"
 	"github.com/looplj/axonhub/internal/pkg/xredis"
 )
 
@@ -1349,6 +1350,29 @@ func TestSystemService_UserAgentPassThrough_WithCache(t *testing.T) {
 	require.False(t, uaPassThrough3)
 }
 
+func TestSystemService_InjectUsageCostEnabled(t *testing.T) {
+	service, client := setupTestSystemService(t, xcache.Config{Mode: xcache.ModeMemory}) //nolint:exhaustruct_v5
+	defer client.Close()
+
+	ctx := context.Background()
+	ctx = ent.NewContext(ctx, client)
+	ctx = authz.WithTestBypass(ctx)
+
+	got, err := service.InjectUsageCostEnabled(ctx)
+	require.NoError(t, err)
+	require.False(t, got)
+
+	require.NoError(t, service.SetInjectUsageCostEnabled(ctx, true))
+	got, err = service.InjectUsageCostEnabled(ctx)
+	require.NoError(t, err)
+	require.True(t, got)
+
+	require.NoError(t, service.SetInjectUsageCostEnabled(ctx, false))
+	got, err = service.InjectUsageCostEnabled(ctx)
+	require.NoError(t, err)
+	require.False(t, got)
+}
+
 func TestNormalizeRetryPolicy_LoadBalancerStrategy(t *testing.T) {
 	t.Run("invalid strategy falls back to default", func(t *testing.T) {
 		policy := &RetryPolicy{LoadBalancerStrategy: "unknown"}
@@ -1374,4 +1398,40 @@ func TestNormalizeRetryPolicy_LoadBalancerStrategy(t *testing.T) {
 			require.Equal(t, strategy, policy.LoadBalancerStrategy)
 		}
 	})
+}
+
+func TestNormalizeRetryPolicy_MigratesLegacyStatuses(t *testing.T) {
+	raw := `{"auto_disable_channel":{"enabled":true,"statuses":[{"status":401,"times":3}]}}`
+	var policy RetryPolicy
+	require.NoError(t, json.Unmarshal([]byte(raw), &policy))
+	normalizeRetryPolicy(&policy)
+
+	require.True(t, policy.AutoDisableChannel.Enabled)
+	require.Len(t, policy.AutoDisableChannel.Rules, 1)
+	require.Equal(t, []int{401}, policy.AutoDisableChannel.Rules[0].StatusCodes)
+	require.Equal(t, 3, policy.AutoDisableChannel.Rules[0].Times)
+	require.Equal(t, objects.APIKeyAutoDisableActionPermanent, policy.AutoDisableChannel.Rules[0].Action)
+	require.Nil(t, policy.AutoDisableChannel.Statuses)
+}
+
+func TestSetRetryPolicy_RejectsPermanentDelete(t *testing.T) {
+	client := enttest.NewEntClient(t, "sqlite3", "file:ent?mode=memory&_fk=1")
+	defer client.Close()
+
+	service := NewSystemService(SystemServiceParams{Ent: client, CacheConfig: xcache.Config{Mode: xcache.ModeMemory}})
+	ctx := authz.WithTestBypass(ent.NewContext(context.Background(), client))
+
+	err := service.SetRetryPolicy(ctx, &RetryPolicy{
+		AutoDisableChannel: AutoDisableChannel{
+			Enabled: true,
+			Rules: []objects.APIKeyAutoDisableRule{{
+				StatusCodes: []int{401},
+				Times:       1,
+				Action:      objects.APIKeyAutoDisableActionPermanentDelete,
+			}},
+		},
+	})
+	require.Error(t, err)
+	var coded *xerrors.CodedError
+	require.ErrorAs(t, err, &coded)
 }

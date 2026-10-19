@@ -182,14 +182,14 @@ func (c *WaferQuotaChecker) parseResponse(body []byte) (QuotaData, error) {
 		},
 	}
 
-	return QuotaData{
+	return NormalizeQuotaData(QuotaData{
 		Status:       normalizedStatus,
 		ProviderType: "wafer",
 		RawData:      rawData,
 		NextResetAt:  nextResetAt,
 		Ready:        IsReadyStatus(normalizedStatus),
 		Limits:       limits,
-	}, nil
+	}), nil
 }
 
 func (c *WaferQuotaChecker) SupportsChannel(ch *ent.Channel) bool {

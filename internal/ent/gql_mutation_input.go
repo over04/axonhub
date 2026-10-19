@@ -833,12 +833,14 @@ type CreateRequestInput struct {
 	Format                     *string
 	RequestHeaders             objects.JSONRawMessage
 	RequestBody                objects.JSONRawMessage
+	ResponseHeaders            objects.JSONRawMessage
 	ResponseBody               objects.JSONRawMessage
 	ResponseChunks             []objects.JSONRawMessage
 	ExternalID                 *string
 	Status                     request.Status
 	Stream                     *bool
 	ClientIP                   *string
+	UserAgent                  *string
 	MetricsLatencyMs           *int64
 	MetricsFirstTokenLatencyMs *int64
 	MetricsReasoningDurationMs *int64
@@ -871,6 +873,9 @@ func (i *CreateRequestInput) Mutate(m *RequestMutation) {
 	if v := i.RequestBody; v != nil {
 		m.SetRequestBody(v)
 	}
+	if v := i.ResponseHeaders; v != nil {
+		m.SetResponseHeaders(v)
+	}
 	if v := i.ResponseBody; v != nil {
 		m.SetResponseBody(v)
 	}
@@ -886,6 +891,9 @@ func (i *CreateRequestInput) Mutate(m *RequestMutation) {
 	}
 	if v := i.ClientIP; v != nil {
 		m.SetClientIP(*v)
+	}
+	if v := i.UserAgent; v != nil {
+		m.SetUserAgent(*v)
 	}
 	if v := i.MetricsLatencyMs; v != nil {
 		m.SetMetricsLatencyMs(*v)
@@ -934,6 +942,9 @@ type UpdateRequestInput struct {
 	ClearRequestHeaders             bool
 	RequestHeaders                  objects.JSONRawMessage
 	AppendRequestHeaders            objects.JSONRawMessage
+	ClearResponseHeaders            bool
+	ResponseHeaders                 objects.JSONRawMessage
+	AppendResponseHeaders           objects.JSONRawMessage
 	ClearResponseBody               bool
 	ResponseBody                    objects.JSONRawMessage
 	AppendResponseBody              objects.JSONRawMessage
@@ -970,6 +981,15 @@ func (i *UpdateRequestInput) Mutate(m *RequestMutation) {
 	}
 	if i.AppendRequestHeaders != nil {
 		m.AppendRequestHeaders(i.RequestHeaders)
+	}
+	if i.ClearResponseHeaders {
+		m.ClearResponseHeaders()
+	}
+	if v := i.ResponseHeaders; v != nil {
+		m.SetResponseHeaders(v)
+	}
+	if i.AppendResponseHeaders != nil {
+		m.AppendResponseHeaders(i.ResponseHeaders)
 	}
 	if i.ClearResponseBody {
 		m.ClearResponseBody()

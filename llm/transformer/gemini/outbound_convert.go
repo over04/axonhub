@@ -293,6 +293,16 @@ func convertLLMToGeminiRequestWithConfig(chatReq *llm.Request, config *Config) *
 		req.ToolConfig = convertLLMToolChoiceToGeminiToolConfig(chatReq.ToolChoice)
 	}
 
+	if hasStrictFunctionTool(chatReq.Tools) {
+		if req.ToolConfig == nil {
+			req.ToolConfig = &ToolConfig{
+				FunctionCallingConfig: &FunctionCallingConfig{Mode: "VALIDATED"},
+			}
+		} else if req.ToolConfig.FunctionCallingConfig.Mode == "AUTO" {
+			req.ToolConfig.FunctionCallingConfig.Mode = "VALIDATED"
+		}
+	}
+
 	// Convert safety settings from TransformerMetadata
 	if safetySettings := extractSafetySettingsFromMetadata(chatReq.TransformerMetadata); len(safetySettings) > 0 {
 		req.SafetySettings = safetySettings
@@ -308,6 +318,16 @@ func convertLLMToGeminiRequestWithConfig(chatReq *llm.Request, config *Config) *
 	}
 
 	return req
+}
+
+func hasStrictFunctionTool(tools []llm.Tool) bool {
+	for _, tool := range tools {
+		if tool.Type == llm.ToolTypeFunction && tool.Function.Strict != nil && *tool.Function.Strict {
+			return true
+		}
+	}
+
+	return false
 }
 
 // convertLLMMessageToGeminiContent converts an LLM Message to Gemini Content.
@@ -380,7 +400,7 @@ func convertLLMMessageToGeminiContent(msg *llm.Message) *Content {
 					}
 				}
 			case "input_audio":
-				if part.InputAudio != nil && part.InputAudio.Data != "" {
+				if part.InputAudio != nil && (part.InputAudio.Data != "" || part.InputAudio.URL != "") {
 					geminiPart := convertAudioToGeminiPart(part.InputAudio)
 					if geminiPart != nil {
 						parts = append(parts, geminiPart)

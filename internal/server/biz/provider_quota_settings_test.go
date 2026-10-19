@@ -15,6 +15,10 @@ import (
 
 func TestProviderQuotaChannelTypes_include_xAI_subscription(t *testing.T) {
 	require.True(t, slices.Contains(providerQuotaChannelTypes, channel.TypeXaiSubscription))
+	require.True(t, slices.Contains(providerQuotaChannelTypes, channel.TypeAntigravity))
+	require.True(t, slices.Contains(providerQuotaChannelTypes, channel.TypeZai))
+	require.True(t, slices.Contains(providerQuotaChannelTypes, channel.TypeZaiAnthropic))
+	require.True(t, slices.Contains(supportedProviderQuotaTypes, "zai"))
 }
 
 func setupProviderQuotaSettingsTest(t *testing.T) (*SystemService, *ent.Client) {
@@ -34,6 +38,7 @@ func TestSystemService_ProviderQuotaCollectionSettings_DefaultsToEnabled(t *test
 	require.NoError(t, err)
 	require.True(t, settings.Enabled)
 	require.True(t, settings.Providers["codex"])
+	require.True(t, settings.Providers["antigravity"])
 	require.True(t, settings.Providers["xai_subscription"])
 	require.True(t, settings.Providers["minimax"])
 	require.True(t, settings.Providers["zhipu"])

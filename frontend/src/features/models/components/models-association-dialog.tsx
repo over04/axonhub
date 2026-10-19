@@ -26,10 +26,14 @@ import { useModels } from '../context/models-context';
 import { useQueryModelChannelConnections, ModelAssociationInput, ModelChannelConnection } from '../data/models';
 import { useUpdateModel } from '../data/models';
 import { ModelAssociation, normalizeModelRoutingPolicyValue } from '../data/schema';
+import {
+  MAX_ASSOCIATION_PRIORITY,
+  associationPrioritySchema,
+  hasInvalidAssociationPriority,
+  nextAssociationPriority,
+} from '../data/association-priority';
 import { toast } from 'sonner';
 import { ChannelModelsList } from './channel-models-list';
-
-const MAX_ASSOCIATION_PRIORITY = 10;
 
 const requestFormatConditionOptions = [
   'openai/chat_completions',
@@ -42,6 +46,8 @@ const requestFormatConditionOptions = [
   'openai/embeddings',
   'openai/video',
   'openai/moderations',
+  'openai/alpha_search',
+  'openai/decisions',
   'openai/audio_speech',
   'openai/audio_transcriptions',
   'openai/audio_translations',
@@ -52,6 +58,7 @@ const requestFormatConditionOptions = [
   'aisdk/datastream',
   'jina/rerank',
   'jina/embeddings',
+  'typesafe/systemone',
   'ollama/chat',
   'seedance/video',
 ] as const;
@@ -107,6 +114,16 @@ const whenFilterFields: FilterBuilderField[] = [
       value: format,
       label: format,
     })),
+  },
+  {
+    value: 'reasoning_effort',
+    label: 'Reasoning effort',
+    type: 'string',
+    placeholder: 'e.g. high, xhigh, max',
+    operators: [
+      { value: 'eq', label: '= Equals' },
+      { value: 'ne', label: '!= Not equal' },
+    ],
   },
   {
     value: 'daily_time',
@@ -291,7 +308,10 @@ function validateWhenConditionNode(
       path: [...path, 'value'],
     });
   }
-  if ((condition.field === 'request_format' || condition.field === 'daily_time') && typeof condition.value !== 'string') {
+  if (
+    (condition.field === 'request_format' || condition.field === 'reasoning_effort' || condition.field === 'daily_time') &&
+    typeof condition.value !== 'string'
+  ) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Value must be text',
@@ -362,7 +382,7 @@ const associationFormSchema = z.object({
     .array(
       z.object({
         type: z.enum(['channel_model', 'channel_regex', 'model', 'regex', 'channel_tags_model', 'channel_tags_regex']),
-        priority: z.number().min(0, 'Priority must be at least 0').max(MAX_ASSOCIATION_PRIORITY, `Priority cannot exceed ${MAX_ASSOCIATION_PRIORITY}`),
+        priority: associationPrioritySchema,
         disabled: z.boolean().default(false),
         whenEnabled: z.boolean().default(false),
         whenCondition: z.custom<FilterBuilderGroupListValue>().default(DEFAULT_WHEN_CONDITION),
@@ -785,6 +805,18 @@ export function ModelsAssociationDialog() {
   // Serialize to string for stable comparison in debounce
   const associationsString = JSON.stringify(watchedAssociations);
   const debouncedAssociationsString = useDebounce(associationsString, 500);
+  const debouncedPriorities = useDebounce(
+    JSON.stringify(watchedAssociations.map((assoc) => assoc.priority ?? null)),
+    500
+  );
+  const debouncedAssociations = useMemo(() => {
+    try {
+      const rows: AssociationFormRow[] = JSON.parse(debouncedAssociationsString) || [];
+      return { rows, hasInvalidPriority: hasInvalidAssociationPriority(JSON.parse(debouncedPriorities) || []) };
+    } catch {
+      return { rows: [], hasInvalidPriority: true };
+    }
+  }, [debouncedAssociationsString, debouncedPriorities]);
 
   // Query connections when associations change
   useEffect(() => {
@@ -793,23 +825,23 @@ export function ModelsAssociationDialog() {
       return;
     }
 
-    let debouncedAssociations: AssociationFormRow[];
-    try {
-      debouncedAssociations = JSON.parse(debouncedAssociationsString) || [];
-    } catch {
-      setConnections([]);
+    const { rows, hasInvalidPriority } = debouncedAssociations;
+
+    // A fractional or out-of-range priority is rejected by the GraphQL Int input,
+    // so the preview stays on the last valid result until the input is corrected.
+    if (hasInvalidPriority) {
       return;
     }
 
     const fetchConnections = async () => {
       try {
         if (isDeveloperMode) {
-          setConnections(buildDeveloperChannelPreview(debouncedAssociations, channelOptions));
+          setConnections(buildDeveloperChannelPreview(rows, channelOptions));
           return;
         }
 
         const inheritedInputs = inheritedAssociations.map((assoc) => modelAssociationToInput(assoc, currentRow?.modelID));
-        const formInputs = sortAssociationsByPriority(debouncedAssociations)
+        const formInputs = sortAssociationsByPriority(rows)
           .map((assoc) => formAssociationToInput(assoc))
           .filter((item): item is ModelAssociationInput => item !== undefined);
         const associations = sortAssociationsByPriority([...formInputs, ...inheritedInputs]);
@@ -827,7 +859,7 @@ export function ModelsAssociationDialog() {
     };
 
     fetchConnections();
-  }, [channelOptions, currentRow?.modelID, debouncedAssociationsString, inheritedAssociations, isOpen, isDeveloperMode, queryConnections]);
+  }, [channelOptions, currentRow?.modelID, debouncedAssociations, inheritedAssociations, isOpen, isDeveloperMode, queryConnections]);
 
   useEffect(() => {
     if (isOpen) {
@@ -904,14 +936,11 @@ export function ModelsAssociationDialog() {
   const handleAddAssociation = useCallback(() => {
     if (fields.length >= 10) return;
 
-    // Get the priority of the last rule (highest priority)
     const currentAssociations = form.getValues('associations') || [];
-    const lastPriority =
-      currentAssociations.length > 0 ? Math.max(...currentAssociations.map((a) => a.priority ?? 0)) : 0;
 
     append({
       type: 'channel_model',
-      priority: lastPriority,
+      priority: nextAssociationPriority(currentAssociations.map((a) => a.priority)),
       disabled: false,
       whenEnabled: false,
       whenCondition: DEFAULT_WHEN_CONDITION,
@@ -935,51 +964,52 @@ export function ModelsAssociationDialog() {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent ref={dialogContentRef} className='flex h-[90vh] max-h-[800px] flex-col w-full max-w-full sm:max-w-6xl'>
+      <DialogContent ref={dialogContentRef} className='flex h-[90vh] max-h-[800px] flex-col w-full max-w-full overflow-hidden sm:max-w-6xl'>
         <DialogHeader className='shrink-0 text-left'>
           <DialogTitle className='text-lg sm:text-xl'>
             {isDeveloperMode ? t('models.dialogs.developerAssociation.title') : t('models.dialogs.association.title')}
           </DialogTitle>
-          <DialogDescription className='text-sm sm:text-base'>
-            {isDeveloperMode
-              ? t('models.dialogs.developerAssociation.description', { name: developerLabel })
-              : t('models.dialogs.association.description', { name: currentRow?.name })}
-          </DialogDescription>
-          <Alert className='mt-3 py-2.5'>
-            <IconInfoCircle className='h-4 w-4' />
-            <AlertDescription className='text-xs sm:text-sm'>
-              {isDeveloperMode
-                ? t('models.dialogs.developerAssociation.inheritanceHelp', { name: developerLabel })
-                : t('models.dialogs.association.inheritanceHelp')}
-            </AlertDescription>
-          </Alert>
-          {!isDeveloperMode && (
-            <div className='mt-3 flex items-start justify-between gap-4 rounded-lg border px-4 py-3'>
-              <div className='space-y-1'>
-                <div className='text-sm font-medium'>{t('models.dialogs.association.disableDeveloperInheritance.label')}</div>
-                <p className='text-muted-foreground text-xs sm:text-sm'>
-                  {t('models.dialogs.association.disableDeveloperInheritance.description')}
-                </p>
-              </div>
-              <Switch
-                checked={disableDeveloperSettingsInheritance}
-                onCheckedChange={(checked) =>
-                  form.setValue('disableDeveloperSettingsInheritance', checked, {
-                    shouldDirty: true,
-                    shouldValidate: true,
-                  })
-                }
-                className='mt-0.5 shrink-0'
-              />
-            </div>
-          )}
         </DialogHeader>
 
-        <div className='flex min-h-0 flex-1 flex-col gap-6 sm:flex-row'>
+        <div className='flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto sm:flex-row sm:overflow-hidden'>
           {/* Left Side - Association Rules */}
-          <div className='flex min-h-0 flex-1 flex-col sm:flex-[2]'>
-            {/* Scrollable Rules Section */}
-            <div className='flex-1 overflow-y-auto py-4'>
+          <div className='flex min-w-0 flex-col sm:min-h-0 sm:flex-[2]'>
+            <DialogDescription className='shrink-0 text-sm sm:text-base'>
+              {isDeveloperMode
+                ? t('models.dialogs.developerAssociation.description', { name: developerLabel })
+                : t('models.dialogs.association.description', { name: currentRow?.name })}
+            </DialogDescription>
+            <Alert className='mt-3 shrink-0 py-2.5'>
+              <IconInfoCircle className='h-4 w-4' />
+              <AlertDescription className='text-xs sm:text-sm'>
+                {isDeveloperMode
+                  ? t('models.dialogs.developerAssociation.inheritanceHelp', { name: developerLabel })
+                  : t('models.dialogs.association.inheritanceHelp')}
+              </AlertDescription>
+            </Alert>
+            {!isDeveloperMode && (
+              <div className='mt-3 flex shrink-0 items-start justify-between gap-4 rounded-lg border px-4 py-3'>
+                <div className='space-y-1'>
+                  <div className='text-sm font-medium'>{t('models.dialogs.association.disableDeveloperInheritance.label')}</div>
+                  <p className='text-muted-foreground text-xs sm:text-sm'>
+                    {t('models.dialogs.association.disableDeveloperInheritance.description')}
+                  </p>
+                </div>
+                <Switch
+                  checked={disableDeveloperSettingsInheritance}
+                  onCheckedChange={(checked) =>
+                    form.setValue('disableDeveloperSettingsInheritance', checked, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                  className='mt-0.5 shrink-0'
+                />
+              </div>
+            )}
+
+            {/* Rules Section - scrolls internally on desktop; part of the single body scroll on mobile */}
+            <div className='flex-1 overflow-y-auto py-4 sm:min-h-0'>
               <Form {...form}>
                 <form id='association-form' onSubmit={form.handleSubmit(onSubmit)} className='space-y-3'>
                   {!isDeveloperMode && (
@@ -995,7 +1025,7 @@ export function ModelsAssociationDialog() {
 
                           return (
                             <FormItem className='space-y-0'>
-                              <div className='flex items-center justify-between gap-3'>
+                              <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3'>
                                 <div className='flex items-center gap-1.5'>
                                   <FormLabel className='text-sm font-medium'>{t('models.fields.loadBalancerStrategy')}</FormLabel>
                                   <Tooltip>
@@ -1010,7 +1040,7 @@ export function ModelsAssociationDialog() {
                                 </div>
                                 <FormControl>
                                   <Select value={field.value} onValueChange={field.onChange}>
-                                    <SelectTrigger className='w-[140px] shrink-0'>
+                                    <SelectTrigger className='w-full sm:w-[140px] sm:shrink-0'>
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -1040,7 +1070,7 @@ export function ModelsAssociationDialog() {
 
                           return (
                             <FormItem className='space-y-0'>
-                              <div className='flex items-center justify-between gap-3'>
+                              <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3'>
                                 <div className='flex items-center gap-1.5'>
                                   <FormLabel className='text-sm font-medium'>{t('models.fields.traceStickyMode')}</FormLabel>
                                   <Tooltip>
@@ -1055,7 +1085,7 @@ export function ModelsAssociationDialog() {
                                 </div>
                                 <FormControl>
                                   <Select value={field.value} onValueChange={field.onChange}>
-                                    <SelectTrigger className='w-[160px] shrink-0'>
+                                    <SelectTrigger className='w-full sm:w-[160px] sm:shrink-0'>
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -1120,7 +1150,7 @@ export function ModelsAssociationDialog() {
           </div>
 
             {/* Right Side - Preview */}
-          <div className='flex min-h-0 flex-1 flex-col border-t sm:border-t-0 sm:border-l pt-4 sm:pt-0 sm:pl-6'>
+          <div className='flex min-w-0 flex-col border-t pt-4 sm:min-h-0 sm:flex-1 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6'>
             <div className='shrink-0 space-y-2 pb-4'>
               <h3 className='text-sm font-semibold'>{t('models.dialogs.association.preview')}</h3>
               <p className='text-muted-foreground text-xs'>
@@ -1133,7 +1163,7 @@ export function ModelsAssociationDialog() {
                 className='h-9 sm:h-8'
               />
             </div>
-            <div className='flex-1 overflow-y-auto'>
+            <div className='flex-1 overflow-y-auto sm:min-h-0'>
               <ChannelModelsList
                 channels={filteredConnections}
                 emptyMessage={
@@ -1416,12 +1446,19 @@ function AssociationRow({ index, form, isDeveloperMode, channelOptions, allModel
                   min={0}
                   max={MAX_ASSOCIATION_PRIORITY}
                   {...field}
-                  value={field.value ?? 0}
-                  onChange={(e) => field.onChange(Math.max(0, Math.min(MAX_ASSOCIATION_PRIORITY, Number(e.target.value) || 0)))}
+                  value={field.value ?? ''}
+                  onChange={(e) => {
+                    // Keep the raw input so the schema reports out-of-range values instead of clamping them.
+                    // An empty input becomes null (not undefined) so react-hook-form does not fall back to the default value.
+                    field.onChange(e.target.value ? Number(e.target.value) : null);
+                    // The form only validates on submit, but Save is disabled while invalid, so surface the error now.
+                    void form.trigger(field.name);
+                  }}
                   className='h-10 sm:h-9 text-center [-moz-appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:hidden [&::-webkit-inner-spin-button]:appearance-none'
                   placeholder='0'
                 />
               </FormControl>
+              <FormMessage />
             </FormItem>
           )}
         />

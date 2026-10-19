@@ -210,6 +210,139 @@ https://custom-gateway.example.com/api##
 # Actual request: /api (no version or endpoint added)
 ```
 
+## Multi-Protocol Endpoints and Model Protocol Overrides
+
+A single channel can host multiple outbound endpoints covering chat, responses, messages and other protocols, so different clients connect with their native protocol.
+
+### Endpoint Configuration
+
+Manage endpoints in the channel **Endpoints** dialog:
+
+- Each endpoint consists of `api_format`, an optional `base_url` (inherits the channel Base URL when empty), and an optional `path` (replaces the protocol's default path; version appending is skipped when set).
+- Each channel type ships with built-in default endpoints (e.g. zhipu provides `openai/chat_completions`, `zhipu_anthropic` provides `anthropic/messages`); custom endpoints can add other formats or override same-named ones.
+
+### Endpoint Auto-Detection
+
+The **Endpoints** dialog can probe the upstream for the three relay protocols (`openai/chat_completions`, `openai/responses`, `anthropic/messages`), so a channel that supports all three can pass through almost every client protocol natively.
+
+- Click **Auto-detect** in the **Current Endpoints** section. The backend sends one lightweight probe per protocol using the channel Base URL, credentials and default test model.
+- Detected protocols are added to the custom endpoint list. They are not saved automatically — review the list and press **Save** to persist.
+- A route is reported as supported when the upstream replies with anything other than `404`/`405`; `401`/`403` are reported as an authentication problem, and `5xx` or connection failures as errors.
+- The channel list **Endpoints** column summarizes the configured relay protocols as four icons, including the native Gemini Contents endpoint: colored when configured, dimmed otherwise.
+
+### Model Protocol Overrides (ModelProtocols)
+
+Force the available outbound protocols for a single model in the **Model Protocol Overrides** block:
+
+```json
+{ "model": "glm-5.3-flash", "apiFormats": ["openai/responses", "openai/chat_completions"], "enabled": true }
+```
+
+- `apiFormats` expresses priority in configuration order; when the client's inbound protocol is in the list it connects directly, otherwise the first listed protocol is used through the unified conversion pipeline.
+- Enabled overrides may only reference `api_format`s the channel already provides (default or custom endpoints), validated on save; overrides are cleaned up automatically when a model is removed from the channel's supported list.
+- Endpoints and protocol overrides are committed atomically in a single save.
+
+### Responses HTTP and WebSocket endpoints
+
+Responses has two distinct endpoint formats:
+
+| `api_format` | Transport | Default request path |
+|---|---|---|
+| `openai/responses` | HTTP | `/v1/responses` |
+| `openai/responses-ws` | WebSocket | `/v1/responses` |
+
+Configure both formats on the same channel when the channel can serve both
+transports. The endpoint format is the source of truth for the outbound
+transport. A WebSocket scheme in a legacy endpoint is normalized to
+`openai/responses-ws`; a legacy HTTP Responses endpoint remains
+`openai/responses`. Existing explicit HTTP-only and WebSocket-only endpoint
+sets remain single-mode until they are saved with a new configuration.
+
+For a request whose inbound format matches an allowed endpoint on the selected
+channel, AxonHub selects that exact format first. If no same-format endpoint is
+available, it selects the first allowed endpoint using the configured endpoint
+order and converts the Responses request, response, or event envelope between
+HTTP and WebSocket. This fallback does not change the channel ranking or make
+an Images or Models request a Responses request.
+
+For model protocol overrides, list the exact formats the model may use:
+
+```json
+{
+  "model": "gpt-5",
+  "apiFormats": ["openai/responses", "openai/responses-ws"],
+  "enabled": true
+}
+```
+
+The override may reference only endpoint formats already available on that
+channel. Use the same channel for a Responses continuation whenever possible.
+If the selected transport or channel changes and AxonHub cannot certify the
+complete prior input, the request is rejected before upstream dispatch rather
+than sent with incomplete history.
+
+### Responses continuation and bounded recovery
+
+`previous_response_id` is bound to the channel, endpoint origin, model,
+authentication identity, and WebSocket connection generation that produced it.
+Native WebSocket continuation sends the next delta on its matching live
+upstream session. A stale, missing, expired, or over-budget context cannot be
+silently replayed on another endpoint or channel.
+
+When the complete context is unavailable, AxonHub returns HTTP 400 or a
+WebSocket error with code `previous_response_not_found` and asks the client to
+resend the full input without `previous_response_id`. This recovery error does
+not enter ordinary channel failover. One failed WebSocket lane does not close
+unrelated lanes on the same downstream connection.
+
+The current bounded defaults are 16 MiB for one retained HTTP record or stream
+capture, 64 MiB for aggregate retained payload, and 128 MiB for one frame or
+queued frame per downstream connection. Exceeding a retention budget removes
+optional replay history, but keeps valid native response identity when the
+provider session can continue. If a later turn needs history that was not
+retained, the client must resend the full input.
+
+**Example** (GLM Coding Plan channel, three endpoints + override):
+
+| endpoint | api_format | base_url |
+|---|---|---|
+| 1 | `openai/chat_completions` | `https://open.bigmodel.cn/api/coding/paas/v4` |
+| 2 | `openai/responses` | `https://open.bigmodel.cn/api/v1` |
+| 3 | `anthropic/messages` | inherits channel Base URL (`https://open.bigmodel.cn/api/anthropic`) |
+
+| Client | Inbound protocol | Selected outbound | Converted? |
+|---|---|---|---|
+| Claude Code | `anthropic/messages` | `anthropic/messages` | No |
+| Codex | `openai/responses` | `openai/responses` | No |
+| OpenAI SDK | `openai/chat_completions` | `openai/chat_completions` | No |
+| Codex (override limited to chat) | `openai/responses` | `openai/chat_completions` | Yes |
+
+### Provider Family Routing
+
+Custom chat endpoints select the channel family's native transformer instead of the generic OpenAI one (the generic transformer assumes `/v1` and produces wrong URLs for non-`/v1` upstreams):
+
+| Channel types | Transformer | URL version |
+|---|---|---|
+| zhipu / zai (incl. `*_anthropic`) | zai | v4 |
+| xiaomi (incl. `xiaomi_anthropic`) | zai | v1 |
+| doubao / volcengine (incl. `*_anthropic`) | doubao | v3 |
+
+Family transformers also apply provider dialect handling: strip `metadata`, clamp `user_id` to 6–128 characters, and convert `reasoning_effort` to `thinking.type`.
+
+## Reasoning Effort
+
+Unified effort values: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`.
+
+### Channel Mapping (ReasoningEffortMapping)
+
+Configure `{from, to}` entries in the channel **Transform Options**; the first matching `from` wins. The mapping is applied once before outbound conversion and affects every client and every outbound protocol (chat / responses / messages), including the native effort marker in Anthropic metadata.
+
+### Conversion Rules
+
+- Anthropic messages: the client's native expression wins (`adaptive` / `budget_tokens` round-trip verbatim); explicit effort passes through unchanged (including `max` and `xhigh`); `minimal` is normalized to `low` (the only automatic conversion).
+- OpenAI chat / responses: `reasoning_effort` / `reasoning.effort` pass through unchanged.
+- If the upstream rejects a level, its original error is forwarded to the client; incompatible levels can be remapped via the channel mapping.
+
 ## FAQ
 
 ### Q: Connection test failed?

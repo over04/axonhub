@@ -58,14 +58,9 @@ input CleanupOptionInput {
   cleanupDays: Int!
 }
 
-type AutoDisableChannelStatus {
-  status: Int!
-  times: Int!
-}
-
 type AutoDisableChannel {
   enabled: Boolean!
-  statuses: [AutoDisableChannelStatus!]!
+  rules: [APIKeyAutoDisableRule!]!
 }
 
 type AutoDisableAPIKeyStatus {
@@ -143,14 +138,9 @@ input UpstreamErrorPolicyInput {
   customMessage: String
 }
 
-input AutoDisableChannelStatusInput {
-  status: Int!
-  times: Int!
-}
-
 input AutoDisableChannelInput {
   enabled: Boolean
-  statuses: [AutoDisableChannelStatusInput!]
+  rules: [APIKeyAutoDisableRuleInput!]
 }
 
 input UpdateRetryPolicyInput {
@@ -173,21 +163,18 @@ enum TraceStickyMode {
   PREFER_PREVIOUS_CHANNEL
 }
 
-enum QuotaEnforcementMode {
-  EXHAUSTED_ONLY
-  DE_PRIORITIZE
+enum QuotaRoutingMode {
+  IGNORE_QUOTA
+  REMOVE_ON_EXHAUSTED
+  BACKPRESSURE
 }
 
-type QuotaEnforcementSettings {
-  enabled: Boolean!
-  mode: QuotaEnforcementMode!
-  allowedChannelIDs: [ID!]!
+type QuotaRoutingSettings {
+  defaultMode: QuotaRoutingMode!
 }
 
-input UpdateQuotaEnforcementSettingsInput {
-  enabled: Boolean
-  mode: QuotaEnforcementMode
-  allowedChannelIDs: [ID!]
+input UpdateQuotaRoutingSettingsInput {
+  defaultMode: QuotaRoutingMode
 }
 
 type ProviderQuotaCollectionProvider {
@@ -378,6 +365,13 @@ input UpdatePassThroughSettingsInput {
   enabled: Boolean!
 }
 
+type UsageCostInjectionSettings {
+  enabled: Boolean!
+}
+
+input UpdateUsageCostInjectionSettingsInput {
+  enabled: Boolean!
+}
 
 type ProxyPreset {
   name: String
@@ -408,7 +402,55 @@ type GcCleanupPreviewItem {
     retentionDays: Int!
 }
 
+type ProvidersCatalog {
+  data: JSONRawMessage!
+  fetchedAt: Time
+  source: String!
+  filtered: Boolean!
+}
+
+type CatalogSettings {
+  upstreamURL: String!
+  refreshSeconds: Int!
+}
+
+input UpdateCatalogSettingsInput {
+  upstreamURL: String
+  refreshSeconds: Int
+}
+
+type CodexCompatibilitySettings {
+  enabled: Boolean!
+  channelID: Int
+}
+
+input UpdateCodexCompatibilitySettingsInput {
+  enabled: Boolean!
+  channelID: Int
+}
+
+type CodexCatalogChannel {
+  id: Int!
+  name: String!
+  status: ChannelStatus!
+}
+
+type CodexCatalogTestResult {
+  success: Boolean!
+  modelCount: Int!
+  upstreamStatus: Int
+  error: String
+}
+
+extend type Query {
+  codexCompatibilitySettings: CodexCompatibilitySettings!
+  codexCompatibilityEnabled: Boolean!
+  codexCatalogChannels: [CodexCatalogChannel!]!
+}
+
 extend type Mutation {
+  updateCodexCompatibilitySettings(input: UpdateCodexCompatibilitySettingsInput!): Boolean!
+  testCodexCatalog(channelID: Int!): CodexCatalogTestResult!
   updateBrandSettings(input: UpdateBrandSettingsInput!): Boolean!
   updateStoragePolicy(input: UpdateStoragePolicyInput!): Boolean!
   updateRetryPolicy(input: UpdateRetryPolicyInput!): Boolean!
@@ -421,7 +463,7 @@ extend type Mutation {
   updateSystemChannelSettings(input: UpdateSystemChannelSettingsInput!): Boolean!
   updateSystemGeneralSettings(input: UpdateSystemGeneralSettingsInput!): Boolean!
   updateVideoStorageSettings(input: UpdateVideoStorageSettingsInput!): Boolean!
-  updateQuotaEnforcementSettings(input: UpdateQuotaEnforcementSettingsInput!): Boolean!
+  updateQuotaRoutingSettings(input: UpdateQuotaRoutingSettingsInput!): Boolean!
   updateProviderQuotaCollectionSettings(input: UpdateProviderQuotaCollectionSettingsInput!): Boolean!
   updateSecuritySettings(input: UpdateSecuritySettingsInput!): Boolean!
   updatePublicModeSettings(input: UpdatePublicModeSettingsInput!): Boolean!
@@ -432,10 +474,15 @@ extend type Mutation {
   deleteProxyPreset(url: String!): Boolean!
   updateUserAgentPassThroughSettings(input: UpdateUserAgentPassThroughSettingsInput!): Boolean!
   updatePassThroughSettings(input: UpdatePassThroughSettingsInput!): Boolean!
+  updateUsageCostInjectionSettings(input: UpdateUsageCostInjectionSettingsInput!): Boolean!
+  updateCatalogSettings(input: UpdateCatalogSettingsInput!): Boolean!
+  refreshProvidersCatalog: ProvidersCatalog!
 }
 
 extend type Query {
   previewGcCleanup(input: TriggerGcCleanupInput!): [GcCleanupPreviewItem!]!
+  providersCatalog(filtered: Boolean = true): ProvidersCatalog!
+  catalogSettings: CatalogSettings!
 }
 
 type SystemVersion {
@@ -492,13 +539,14 @@ extend type Query {
   systemChannelSettings: SystemChannelSettings!
   systemGeneralSettings: SystemGeneralSettings!
   videoStorageSettings: VideoStorageSettings!
-  quotaEnforcementSettings: QuotaEnforcementSettings!
+  quotaRoutingSettings: QuotaRoutingSettings!
   providerQuotaCollectionSettings: ProviderQuotaCollectionSettings!
   securitySettings: SecuritySettings!
   publicModeSettings: PublicModeSettings!
   proxyPresets: [ProxyPreset!]!
   userAgentPassThroughSettings: UserAgentPassThroughSettings!
   passThroughSettings: PassThroughSettings!
+  usageCostInjectionSettings: UsageCostInjectionSettings!
   getCacheDiagnostics(input: GetCacheDiagnosticsInput): GetCacheDiagnosticsPayload!
 }
 

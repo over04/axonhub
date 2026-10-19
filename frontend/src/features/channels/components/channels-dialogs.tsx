@@ -1,8 +1,13 @@
+import { useEffect } from 'react';
 import { useChannels } from '../context/channels-context';
+import { useChannelDetails } from '../data/channels';
 import { ChannelsActionDialog } from './channels-action-dialog';
+import { ChannelsAPIKeyManagementDialog } from './channels-api-key-management-dialog';
 import { ChannelsArchiveDialog } from './channels-archive-dialog';
 import { ChannelsAvailabilityDialog } from './channels-availability-dialog';
 import { ChannelsBulkArchiveDialog } from './channels-bulk-archive-dialog';
+import { ChannelsBulkAutoDisableDialog } from './channels-bulk-auto-disable-dialog';
+import { ChannelsBulkManageTagsDialog } from './channels-bulk-manage-tags-dialog';
 import { ChannelsBulkDeleteDialog } from './channels-bulk-delete-dialog';
 import { ChannelsBulkDisableDialog } from './channels-bulk-disable-dialog';
 import { ChannelsBulkEnableDialog } from './channels-bulk-enable-dialog';
@@ -22,11 +27,27 @@ import { ChannelsStatusDialog } from './channels-status-dialog';
 import { ChannelsSystemSettingsDialog } from './channels-system-settings-dialog';
 import { ChannelsTestDialog } from './channels-test-dialog';
 import { ChannelsTestHistoryDrawer } from './channels-test-history-drawer';
-import { ChannelsAPIKeyManagementDialog } from './channels-api-key-management-dialog';
 import { ChannelsTransformOptionsDialog } from './channels-transform-options-dialog';
 
 export function ChannelsDialogs() {
-  const { open, setOpen, currentRow, setCurrentRow } = useChannels();
+  const { open, setOpen, currentRow: partialCurrentRow, setCurrentRow, selectedChannels } = useChannels();
+  const detailsQuery = useChannelDetails(partialCurrentRow?.id, {
+    enabled: Boolean(partialCurrentRow && open),
+  });
+
+  useEffect(() => {
+    if (detailsQuery.data && partialCurrentRow?.id === detailsQuery.data.id && partialCurrentRow !== detailsQuery.data) {
+      setCurrentRow(detailsQuery.data);
+    }
+  }, [detailsQuery.data, partialCurrentRow, setCurrentRow]);
+
+  // List rows intentionally contain only fields required by visible columns.
+  // Delay row-scoped dialogs until the full snapshot has been loaded so hiding
+  // a column never removes data from edit/configuration dialogs.
+  const currentRow =
+    partialCurrentRow && (!open || detailsQuery.isError || detailsQuery.data === partialCurrentRow)
+      ? (detailsQuery.data ?? partialCurrentRow)
+      : null;
   return (
     <>
       <ChannelsSystemSettingsDialog />
@@ -42,6 +63,14 @@ export function ChannelsDialogs() {
       <ChannelsBulkTestDialog />
 
       <ChannelsBulkDeleteDialog />
+
+      <ChannelsBulkManageTagsDialog />
+
+      <ChannelsBulkAutoDisableDialog
+        open={open === 'bulkAutoDisable'}
+        onOpenChange={(isOpen) => setOpen(isOpen ? 'bulkAutoDisable' : null)}
+        selectedChannels={selectedChannels}
+      />
 
       <ChannelsBulkImportDialog isOpen={open === 'bulkImport'} onClose={() => setOpen(null)} />
 

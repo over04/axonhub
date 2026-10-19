@@ -92,9 +92,12 @@ func TestDefaultEndpointsForChannelType_UseLLMAPIFormatValues(t *testing.T) {
 			expected: []string{llm.APIFormatOpenAIChatCompletion.String()},
 		},
 		{
-			name:     "minimax exposes chat only",
-			typ:      channel.TypeMinimax,
-			expected: []string{llm.APIFormatOpenAIChatCompletion.String()},
+			name: "minimax exposes chat and image generation",
+			typ:  channel.TypeMinimax,
+			expected: []string{
+				llm.APIFormatOpenAIChatCompletion.String(),
+				llm.APIFormatOpenAIImageGeneration.String(),
+			},
 		},
 		{
 			name:     "xiaomi exposes chat only",
@@ -102,8 +105,13 @@ func TestDefaultEndpointsForChannelType_UseLLMAPIFormatValues(t *testing.T) {
 			expected: []string{llm.APIFormatOpenAIChatCompletion.String()},
 		},
 		{
-			name:     "nanogpt responses defaults to responses",
+			name:     "nanogpt responses defaults to responses only",
 			typ:      channel.TypeNanogptResponses,
+			expected: []string{llm.APIFormatOpenAIResponse.String()},
+		},
+		{
+			name:     "bailian responses defaults to responses only",
+			typ:      channel.TypeBailianResponses,
 			expected: []string{llm.APIFormatOpenAIResponse.String()},
 		},
 		{
@@ -115,7 +123,7 @@ func TestDefaultEndpointsForChannelType_UseLLMAPIFormatValues(t *testing.T) {
 			},
 		},
 		{
-			name:     "xai responses defaults to responses",
+			name:     "xai responses defaults to responses only",
 			typ:      channel.TypeXaiResponses,
 			expected: []string{llm.APIFormatOpenAIResponse.String()},
 		},
@@ -125,16 +133,18 @@ func TestDefaultEndpointsForChannelType_UseLLMAPIFormatValues(t *testing.T) {
 			expected: []string{llm.APIFormatOpenAIResponse.String()},
 		},
 		{
-			name: "codex exposes responses plus image generation and edit",
+			name: "codex exposes HTTP and WS responses, alpha search, plus image generation and edit",
 			typ:  channel.TypeCodex,
 			expected: []string{
 				llm.APIFormatOpenAIResponse.String(),
+				llm.APIFormatOpenAIResponseWebSocket.String(),
+				llm.APIFormatOpenAIAlphaSearch.String(),
 				llm.APIFormatOpenAIImageGeneration.String(),
 				llm.APIFormatOpenAIImageEdit.String(),
 			},
 		},
 		{
-			name:     "fenno exposes codex responses",
+			name:     "fenno defaults to responses only",
 			typ:      channel.TypeFenno,
 			expected: []string{llm.APIFormatOpenAIResponse.String()},
 		},
@@ -173,6 +183,24 @@ func TestDefaultEndpointsForChannelType_UseLLMAPIFormatValues(t *testing.T) {
 			expected: []string{
 				llm.APIFormatOpenAIChatCompletion.String(),
 				llm.APIFormatSeedanceVideo.String(),
+			},
+		},
+		{
+			name:     "commandcode defaults to openai chat completions",
+			typ:      channel.TypeCommandcode,
+			expected: []string{llm.APIFormatOpenAIChatCompletion.String()},
+		},
+		{
+			name:     "commandcode anthropic defaults to anthropic messages",
+			typ:      channel.TypeCommandcodeAnthropic,
+			expected: []string{llm.APIFormatAnthropicMessage.String()},
+		},
+		{
+			name: "modelscope exposes chat and the native async image format",
+			typ:  channel.TypeModelscope,
+			expected: []string{
+				llm.APIFormatOpenAIChatCompletion.String(),
+				llm.APIFormatModelScopeImage.String(),
 			},
 		},
 	}
@@ -245,11 +273,20 @@ func TestValidateEndpoints(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("websocket compact responses endpoint passes validation", func(t *testing.T) {
+	t.Run("websocket compact responses endpoint returns error", func(t *testing.T) {
 		err := ValidateEndpoints([]objects.ChannelEndpoint{
 			{APIFormat: llm.APIFormatOpenAIResponseCompact.String(), Transport: objects.ChannelEndpointTransportWebSocket},
 		})
-		require.NoError(t, err)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "websocket transport only supports")
+	})
+
+	t.Run("websocket compact responses base url returns error", func(t *testing.T) {
+		err := ValidateEndpoints([]objects.ChannelEndpoint{
+			{APIFormat: llm.APIFormatOpenAIResponseCompact.String(), BaseURL: "wss://api.openai.com/v1"},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "websocket transport only supports")
 	})
 
 	t.Run("valid endpoints pass validation", func(t *testing.T) {
@@ -258,6 +295,14 @@ func TestValidateEndpoints(t *testing.T) {
 			{APIFormat: llm.APIFormatGeminiContents.String(), Path: "/custom/gemini"},
 		})
 		require.NoError(t, err)
+	})
+
+	t.Run("Zenmux video endpoint is supported", func(t *testing.T) {
+		format := llm.APIFormatZenmuxVideo.String()
+
+		_, supported := SupportedAPIFormats[format]
+		require.True(t, supported)
+		require.NoError(t, ValidateEndpoints([]objects.ChannelEndpoint{{APIFormat: format}}))
 	})
 
 	t.Run("empty endpoints list passes validation", func(t *testing.T) {
@@ -329,6 +374,7 @@ func TestSupportedAPIFormats_UsesLLMAPIFormatValues(t *testing.T) {
 		llm.APIFormatOpenAITranscription.String(),
 		llm.APIFormatOpenAITranslation.String(),
 		llm.APIFormatOpenAIModeration.String(),
+		llm.APIFormatOpenAIAlphaSearch.String(),
 		llm.APIFormatAnthropicMessage.String(),
 		llm.APIFormatGeminiContents.String(),
 		llm.APIFormatGeminiEmbedding.String(),

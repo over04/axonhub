@@ -1,16 +1,18 @@
 import { useState, useCallback, useMemo } from 'react';
+import { IconCalendar, IconX, IconFilter } from '@tabler/icons-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { IconCalendar, IconX, IconFilter } from '@tabler/icons-react';
+import { useAnalyticsFilterStore } from '@/stores/analyticsStore';
 import { cn, formatUserName } from '@/lib/utils';
+import { useDebounce } from '@/hooks/use-debounce';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { useAnalyticsFilterStore } from '@/stores/analyticsStore';
+import { useApiKeyOptions, useApiKeyOptionsByIDs } from '@/features/apikeys/data/apikeys';
 import { useAllChannelSummarys } from '@/features/channels/data/channels';
-import { useApiKeys } from '@/features/apikeys/data/apikeys';
-import { useUsers } from '@/features/users/data/users';
 import { useProjects } from '@/features/projects/data/projects';
+import { useUsers } from '@/features/users/data/users';
+import { usePermissions } from '@/hooks/usePermissions';
 import { AnalyticsFacetedFilter } from './analytics-faceted-filter';
 
 // Calendar Date → 'YYYY-MM-DD' 字符串（直接取本地年月日，不做时区转换）
@@ -75,22 +77,14 @@ function DateRangePicker({ startDate, endDate, onStartChange, onEndChange }: Dat
         <PopoverTrigger asChild>
           <Button
             variant='outline'
-            className={cn(
-              'h-8 w-[130px] justify-start text-left text-xs font-normal',
-              !startDate && 'text-muted-foreground'
-            )}
+            className={cn('h-8 w-[130px] justify-start text-left text-xs font-normal', !startDate && 'text-muted-foreground')}
           >
             <IconCalendar className='mr-1 h-3 w-3' />
             {startDate || t('analytics.filter.startDate')}
           </Button>
         </PopoverTrigger>
         <PopoverContent className='w-auto p-0' align='start'>
-          <Calendar
-            mode='single'
-            selected={startDate ? parseDate(startDate) : undefined}
-            onSelect={handleStartDateSelect}
-            initialFocus
-          />
+          <Calendar mode='single' selected={startDate ? parseDate(startDate) : undefined} onSelect={handleStartDateSelect} initialFocus />
         </PopoverContent>
       </Popover>
 
@@ -100,10 +94,7 @@ function DateRangePicker({ startDate, endDate, onStartChange, onEndChange }: Dat
         <PopoverTrigger asChild>
           <Button
             variant='outline'
-            className={cn(
-              'h-8 w-[130px] justify-start text-left text-xs font-normal',
-              !endDate && 'text-muted-foreground'
-            )}
+            className={cn('h-8 w-[130px] justify-start text-left text-xs font-normal', !endDate && 'text-muted-foreground')}
           >
             <IconCalendar className='mr-1 h-3 w-3' />
             {endDate || t('analytics.filter.endDate')}
@@ -130,21 +121,26 @@ interface AnalyticsFilterBarProps {
 export function AnalyticsFilterBar({ earliestDate }: AnalyticsFilterBarProps) {
   const { t } = useTranslation();
   const filter = useAnalyticsFilterStore((state) => state.filter);
-  const {
-    setStartTime,
-    setEndTime,
-    setProjectIDs,
-    setChannelIDs,
-    setModelIDs,
-    setAPIKeyIDs,
-    setUserIDs,
-    resetFilter,
-  } = useAnalyticsFilterStore();
+  const [apiKeySearch, setApiKeySearch] = useState('');
+  const debouncedApiKeySearch = useDebounce(apiKeySearch, 300);
+  const { setStartTime, setEndTime, setProjectIDs, setChannelIDs, setModelIDs, setAPIKeyIDs, setUserIDs, resetFilter } =
+    useAnalyticsFilterStore();
+  const { userPermissions } = usePermissions();
+  const canViewUsers = userPermissions.canRead;
 
   // Fetch real data for dropdowns
   const { data: channels, isLoading: isLoadingChannels } = useAllChannelSummarys();
-  const { data: apiKeysData, isLoading: isLoadingApiKeys } = useApiKeys({ first: 100 });
-  const { data: usersData, isLoading: isLoadingUsers } = useUsers({ first: 100 });
+  const {
+    data: apiKeysData,
+    isFetching: isFetchingApiKeys,
+    fetchNextPage: fetchNextApiKeyPage,
+    hasNextPage: hasNextApiKeyPage,
+    isFetchingNextPage: isFetchingNextApiKeyPage,
+  } = useApiKeyOptions({ search: debouncedApiKeySearch, includeArchived: true });
+  const { data: selectedApiKeysData } = useApiKeyOptionsByIDs(filter.apiKeyIDs, {
+    enabled: !!filter.apiKeyIDs?.length,
+  });
+  const { data: usersData, isLoading: isLoadingUsers } = useUsers({ first: 100 }, { disableAutoFetch: !canViewUsers });
   const { data: projectsData, isLoading: isLoadingProjects } = useProjects({ first: 100 });
 
   const channelOptions = useMemo(
@@ -163,17 +159,23 @@ export function AnalyticsFilterBar({ earliestDate }: AnalyticsFilterBarProps) {
         if (entry.actualModel) modelSet.add(entry.actualModel);
       });
     });
-    return Array.from(modelSet).sort().map((m) => ({ label: m, value: m }));
+    return Array.from(modelSet)
+      .sort()
+      .map((m) => ({ label: m, value: m }));
   }, [channels]);
 
-  const apiKeyOptions = useMemo(
-    () =>
-      (apiKeysData?.edges || []).map((edge) => ({
-        label: edge.node.name,
-        value: String(edge.node.id),
-      })),
-    [apiKeysData]
-  );
+  const apiKeyOptions = useMemo(() => {
+    const options = new Map<string, { label: string; value: string }>();
+    for (const edge of selectedApiKeysData?.edges ?? []) {
+      options.set(edge.node.id, { label: edge.node.name, value: edge.node.id });
+    }
+    for (const page of apiKeysData?.pages ?? []) {
+      for (const edge of page.edges) {
+        options.set(edge.node.id, { label: edge.node.name, value: edge.node.id });
+      }
+    }
+    return Array.from(options.values());
+  }, [apiKeysData, selectedApiKeysData]);
 
   const userOptions = useMemo(
     () =>
@@ -241,20 +243,14 @@ export function AnalyticsFilterBar({ earliestDate }: AnalyticsFilterBarProps) {
   }, [earliestDate, setStartTime, setEndTime]);
 
   const hasFilters =
-    filter.startTime ||
-    filter.endTime ||
-    filter.projectIDs ||
-    filter.channelIDs ||
-    filter.modelIDs ||
-    filter.apiKeyIDs ||
-    filter.userIDs;
+    filter.startTime || filter.endTime || filter.projectIDs || filter.channelIDs || filter.modelIDs || filter.apiKeyIDs || filter.userIDs;
 
   return (
-    <div className='space-y-3 rounded-lg border bg-card p-4'>
+    <div className='bg-card space-y-3 rounded-lg border p-4'>
       {/* Date Filters */}
       <div className='flex flex-wrap items-center gap-2'>
         <div className='flex items-center gap-1.5 text-sm font-medium'>
-          <IconFilter className='h-4 w-4 text-muted-foreground' />
+          <IconFilter className='text-muted-foreground h-4 w-4' />
           {t('analytics.filter.dateRange')}
         </div>
 
@@ -320,20 +316,27 @@ export function AnalyticsFilterBar({ earliestDate }: AnalyticsFilterBarProps) {
           options={apiKeyOptions}
           selectedValues={filter.apiKeyIDs || []}
           onSelectedValuesChange={setAPIKeyIDs}
-          isLoading={isLoadingApiKeys}
+          isLoading={isFetchingApiKeys && !apiKeysData}
+          searchValue={apiKeySearch}
+          onSearchValueChange={setApiKeySearch}
+          hasMore={!!hasNextApiKeyPage}
+          isLoadingMore={isFetchingNextApiKeyPage}
+          onLoadMore={fetchNextApiKeyPage}
         />
 
-        <AnalyticsFacetedFilter
-          title={t('analytics.filter.user')}
-          options={userOptions}
-          selectedValues={filter.userIDs || []}
-          onSelectedValuesChange={setUserIDs}
-          isLoading={isLoadingUsers}
-        />
+        {canViewUsers && (
+          <AnalyticsFacetedFilter
+            title={t('analytics.filter.user')}
+            options={userOptions}
+            selectedValues={filter.userIDs || []}
+            onSelectedValuesChange={setUserIDs}
+            isLoading={isLoadingUsers}
+          />
+        )}
 
         {/* Reset Button */}
         {hasFilters && (
-          <Button variant='ghost' size='sm' className='h-8 text-xs text-muted-foreground' onClick={resetFilter}>
+          <Button variant='ghost' size='sm' className='text-muted-foreground h-8 text-xs' onClick={resetFilter}>
             <IconX className='mr-1 h-3 w-3' />
             {t('analytics.filter.reset')}
           </Button>

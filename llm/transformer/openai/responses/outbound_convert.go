@@ -175,6 +175,10 @@ func convertUserMessage(msg llm.Message) Item {
 						Detail:   p.ImageURL.Detail,
 					})
 				}
+			case "document":
+				if p.Document != nil {
+					contentItems = append(contentItems, responseInputFile(p.Document))
+				}
 			case "compaction", "compaction_summary":
 				if p.Compact != nil {
 					contentItems = append(contentItems, compactionItemFromPart(p, p.Type))
@@ -188,6 +192,29 @@ func convertUserMessage(msg llm.Message) Item {
 		Role:    msg.Role,
 		Content: &Input{Items: contentItems},
 	}
+}
+
+func responseInputFile(document *llm.DocumentURL) Item {
+	item := Item{
+		Type: "input_file",
+	}
+	if document.FileID != "" {
+		item.FileID = &document.FileID
+	}
+	if document.Filename != "" {
+		item.Filename = &document.Filename
+	} else if document.MIMEType == "application/pdf" {
+		item.Filename = lo.ToPtr("document.pdf")
+	}
+	if document.URL != "" {
+		if strings.HasPrefix(document.URL, "data:") {
+			item.FileData = &document.URL
+		} else {
+			item.FileURL = &document.URL
+		}
+	}
+
+	return item
 }
 
 // convertAssistantMessage converts an assistant message to Responses API Item(s) format.
@@ -244,7 +271,7 @@ func convertAssistantMessage(msg llm.Message) []Item {
 			toolCallItems = append(toolCallItems, Item{
 				Type:      "function_call",
 				CallID:    tc.ID,
-				Name:      tc.Function.Name,
+				Name:      localFunctionName(tc.Function.Namespace, tc.Function.Name),
 				Namespace: tc.Function.Namespace,
 				Arguments: tc.Function.Arguments,
 			})
@@ -345,6 +372,7 @@ func convertToolMessageWithType(msg llm.Message, itemType string) Item {
 	}
 
 	return Item{
+		ID:     msg.ID,
 		Type:   itemType,
 		CallID: lo.FromPtr(msg.ToolCallID),
 		Output: &output,
@@ -429,7 +457,7 @@ func convertCustomToTool(src llm.Tool) Tool {
 func convertFunctionToTool(src llm.Tool) Tool {
 	tool := Tool{
 		Type:        "function",
-		Name:        src.Function.Name,
+		Name:        localFunctionName(src.Function.Namespace, src.Function.Name),
 		Description: src.Function.Description,
 		Strict:      src.Function.Strict,
 	}
@@ -503,12 +531,18 @@ func convertToolChoice(src *llm.ToolChoice) *ToolChoice {
 	if src.ToolChoice != nil {
 		// String mode like "none", "auto", "required"
 		result.Mode = src.ToolChoice
-	} else if src.NamedToolChoice != nil {
+	}
+	if src.NamedToolChoice != nil {
 		// Specific tool choice
 		result.Type = &src.NamedToolChoice.Type
 		if src.NamedToolChoice.Function.Name != "" {
-			result.Name = &src.NamedToolChoice.Function.Name
+			name := src.NamedToolChoice.Function.Name
+			result.Name = &name
 		}
+	}
+
+	for _, opt := range src.Tools {
+		result.Tools = append(result.Tools, ToolOption{Type: opt.Type, Name: opt.Name})
 	}
 
 	return result
@@ -689,7 +723,7 @@ func convertOutputToMessage(output []Item, transformerMetadata map[string]any) l
 				ID:   outputItem.CallID,
 				Type: "function",
 				Function: llm.FunctionCall{
-					Name:      outputItem.Name,
+					Name:      flatFunctionName(outputItem.Namespace, outputItem.Name),
 					Namespace: outputItem.Namespace,
 					Arguments: outputItem.Arguments,
 				},

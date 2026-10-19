@@ -3,6 +3,7 @@ package biz
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/looplj/axonhub/internal/authz"
@@ -25,6 +26,14 @@ func (svc *ProviderQuotaService) fillPeriodQuotas(
 	quotaData *provider_quota.QuotaData,
 	now time.Time,
 ) {
+	if quotaData.ProviderType == "zenmux" {
+		for i := range quotaData.Limits {
+			quotaData.Limits[i].PeriodCost = nil
+			quotaData.Limits[i].PeriodQuota = nil
+		}
+		return
+	}
+
 	// Providers repeat the same period start across limits (Claude Code reports
 	// a 5h and a 7d window, Cline three windows), so the cost of each distinct
 	// period is only queried once.
@@ -35,7 +44,7 @@ func (svc *ProviderQuotaService) fillPeriodQuotas(
 		limit.PeriodCost = nil
 
 		start := limit.PeriodStart
-		if start == nil || !start.Before(now) {
+		if start == nil || !start.Before(now) || limit.UsageRatio <= 0 || math.IsNaN(limit.UsageRatio) || math.IsInf(limit.UsageRatio, 0) {
 			continue
 		}
 
@@ -53,6 +62,10 @@ func (svc *ProviderQuotaService) fillPeriodQuotas(
 
 			cost = aggregated
 			costs[*start] = cost
+		}
+
+		if cost <= 0 {
+			continue
 		}
 
 		limit.PeriodCost = &cost

@@ -1,10 +1,27 @@
 package responses
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"github.com/looplj/axonhub/llm"
 )
+
+var rawCreateRequestFields = []string{
+	"client_metadata",
+	"context_management",
+	"conversation",
+	"moderation",
+	"prompt",
+	"prompt_cache_options",
+}
+
+var rawCompactRequestFields = []string{
+	"previous_response_id",
+	"prompt_cache_options",
+	"prompt_cache_retention",
+	"service_tier",
+}
 
 func attachOpenAIResponsesRequestExtensions(chatReq *llm.Request, req *Request, rawBody []byte) {
 	if chatReq == nil || req == nil {
@@ -17,14 +34,16 @@ func attachOpenAIResponsesRequestExtensions(chatReq *llm.Request, req *Request, 
 		reasoningContext = req.Reasoning.Context
 	}
 	requestExt := &llm.OpenAIResponsesRequestExtensions{
-		ReasoningContext: reasoningContext,
-		RawTools:         buildRawOnlyToolFragments(req.Tools, raw.Tools),
-		ToolSignatures:   buildRepresentedToolSignatures(req.Tools),
-		RawToolChoice:    rawUnsupportedToolChoice(req.ToolChoice, raw.ToolChoice),
-		RawInputItems:    buildRawOnlyInputFragments(req.Input, raw.InputItems),
+		ReasoningContext:        reasoningContext,
+		RawFields:               selectRawRequestFields(raw.Fields, rawCreateRequestFields),
+		RawTools:                buildRawOnlyToolFragments(req.Tools, raw.Tools),
+		ToolSignatures:          buildRepresentedToolSignatures(req.Tools),
+		RawToolChoice:           rawUnsupportedToolChoice(req.ToolChoice, raw.ToolChoice),
+		RawInputItems:           buildRawOnlyInputFragments(req.Input, raw.InputItems),
+		OmittedInputItemIndices: buildOmittedInputItemIndices(req.Input),
 	}
 
-	if requestExt.ReasoningContext == "" && len(requestExt.RawTools) == 0 && len(requestExt.RawToolChoice) == 0 && len(requestExt.RawInputItems) == 0 {
+	if requestExt.ReasoningContext == "" && len(requestExt.RawFields) == 0 && len(requestExt.RawTools) == 0 && len(requestExt.RawToolChoice) == 0 && len(requestExt.RawInputItems) == 0 && len(requestExt.OmittedInputItemIndices) == 0 {
 		return
 	}
 
@@ -36,6 +55,7 @@ func attachOpenAIResponsesRequestExtensions(chatReq *llm.Request, req *Request, 
 }
 
 type rawRequestFragments struct {
+	Fields     map[string]json.RawMessage
 	Tools      []json.RawMessage
 	ToolChoice json.RawMessage
 	InputItems []json.RawMessage
@@ -54,6 +74,10 @@ func parseRawRequestFragments(rawBody []byte) rawRequestFragments {
 	if err := json.Unmarshal(rawBody, &raw); err != nil {
 		return rawRequestFragments{}
 	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(rawBody, &fields); err != nil {
+		return rawRequestFragments{}
+	}
 
 	var inputItems []json.RawMessage
 	if len(raw.Input) > 0 && json.Unmarshal(raw.Input, &inputItems) != nil {
@@ -61,10 +85,58 @@ func parseRawRequestFragments(rawBody []byte) rawRequestFragments {
 	}
 
 	return rawRequestFragments{
+		Fields:     fields,
 		Tools:      raw.Tools,
 		ToolChoice: raw.ToolChoice,
 		InputItems: inputItems,
 	}
+}
+
+func attachOpenAIResponsesRawRequestFields(chatReq *llm.Request, rawBody []byte, fieldNames []string) {
+	if chatReq == nil || len(rawBody) == 0 {
+		return
+	}
+
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(rawBody, &fields) != nil {
+		return
+	}
+	rawFields := selectRawRequestFields(fields, fieldNames)
+	if len(rawFields) == 0 {
+		return
+	}
+
+	ext := llm.EnsureOpenAIResponsesProviderExtensions(chatReq)
+	if ext == nil {
+		return
+	}
+	if ext.Request == nil {
+		ext.Request = &llm.OpenAIResponsesRequestExtensions{}
+	}
+	if ext.Request.RawFields == nil {
+		ext.Request.RawFields = make(map[string]json.RawMessage, len(rawFields))
+	}
+	for key, value := range rawFields {
+		ext.Request.RawFields[key] = value
+	}
+}
+
+func selectRawRequestFields(fields map[string]json.RawMessage, fieldNames []string) map[string]json.RawMessage {
+	if len(fields) == 0 || len(fieldNames) == 0 {
+		return nil
+	}
+
+	selected := make(map[string]json.RawMessage, len(fieldNames))
+	for _, name := range fieldNames {
+		if value, ok := fields[name]; ok {
+			selected[name] = cloneRaw(value)
+		}
+	}
+	if len(selected) == 0 {
+		return nil
+	}
+
+	return selected
 }
 
 func buildRepresentedToolSignatures(tools []Tool) []string {
@@ -75,13 +147,14 @@ func buildRepresentedToolSignatures(tools []Tool) []string {
 	signatures := make([]string, 0, len(tools))
 	for _, tool := range tools {
 		if tool.Type == "namespace" {
+			represented := Tool{Type: "namespace", Name: tool.Name}
 			for _, subTool := range tool.Tools {
 				if subTool.Type == "function" {
-					signatures = append(signatures, responseToolSignature(Tool{
-						Type: "function",
-						Name: namespaceFunctionName(tool.Name, subTool.Name),
-					}))
+					represented.Tools = append(represented.Tools, subTool)
 				}
+			}
+			if len(represented.Tools) > 0 {
+				signatures = append(signatures, responseToolSignature(represented))
 			}
 			continue
 		}
@@ -122,14 +195,14 @@ func representedNamespaceToolCount(tool Tool) int {
 		return 0
 	}
 
-	count := 0
+	// A namespace is now represented by one grouped Responses tool.
 	for _, subTool := range tool.Tools {
 		if subTool.Type == "function" {
-			count++
+			return 1
 		}
 	}
 
-	return count
+	return 0
 }
 
 func isStructurallyRepresentedToolType(toolType string) bool {
@@ -143,6 +216,13 @@ func isStructurallyRepresentedToolType(toolType string) bool {
 
 func responseToolSignature(tool Tool) string {
 	switch tool.Type {
+	case "namespace":
+		names := []string{tool.Name}
+		for _, subTool := range tool.Tools {
+			names = append(names, subTool.Type, subTool.Name)
+		}
+		encoded, _ := json.Marshal(names)
+		return "namespace:" + string(encoded)
 	case "function", "custom":
 		return tool.Type + ":" + tool.Name
 	default:
@@ -186,6 +266,24 @@ func buildRawOnlyInputFragments(input Input, rawItems []json.RawMessage) []llm.O
 	return fragments
 }
 
+func buildOmittedInputItemIndices(input Input) []int {
+	if len(input.Items) == 0 {
+		return nil
+	}
+
+	omitted := make([]int, 0)
+	for i, item := range input.Items {
+		if item.Type == "reasoning" && item.EncryptedContent == nil {
+			omitted = append(omitted, i)
+		}
+	}
+
+	return omitted
+}
+
+// isStructurallyRepresentedInputItem reports whether an input item type is
+// rebuilt from the unified request. Types that are not rebuilt are replayed
+// verbatim from the raw body; see buildRawOnlyInputFragments.
 func isStructurallyRepresentedInputItem(itemType string) bool {
 	switch itemType {
 	case "", "message", "input_text", "input_image", "function_call", "function_call_output",
@@ -205,6 +303,8 @@ func openAIResponsesRequestExtensions(llmReq *llm.Request) *llm.OpenAIResponsesR
 	return requestExt
 }
 
+// marshalRequestPayload marshals the unified request and replays the raw fields,
+// tools and input items the caller sent so they survive the round trip.
 func marshalRequestPayload(payload Request, llmReq *llm.Request) ([]byte, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -220,6 +320,7 @@ func marshalRequestPayload(payload Request, llmReq *llm.Request) ([]byte, error)
 	if err := json.Unmarshal(body, &obj); err != nil {
 		return nil, err
 	}
+	mergeRawRequestFields(obj, requestExt)
 
 	if tools, ok := mergeRawOnlyTools(obj["tools"], requestExt); ok {
 		toolsRaw, err := json.Marshal(tools)
@@ -244,10 +345,54 @@ func marshalRequestPayload(payload Request, llmReq *llm.Request) ([]byte, error)
 	return json.Marshal(obj)
 }
 
+func mergeRawRequestFields(obj map[string]json.RawMessage, requestExt *llm.OpenAIResponsesRequestExtensions) {
+	if obj == nil || requestExt == nil {
+		return
+	}
+
+	for key, value := range requestExt.RawFields {
+		if _, exists := obj[key]; !exists && len(value) > 0 {
+			obj[key] = cloneRaw(value)
+		}
+	}
+}
+
+func marshalCompactRequestPayload(payload CompactAPIRequest, llmReq *llm.Request) ([]byte, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	requestExt := openAIResponsesRequestExtensions(llmReq)
+	if requestExt == nil {
+		return body, nil
+	}
+
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return nil, err
+	}
+	mergeRawRequestFields(obj, requestExt)
+	if input, ok := mergeRawOnlyInputItems(obj["input"], requestExt); ok {
+		inputRaw, err := json.Marshal(input)
+		if err != nil {
+			return nil, err
+		}
+		obj["input"] = inputRaw
+	}
+
+	return json.Marshal(obj)
+}
+
+// mergeRawOnlyInputItems rebuilds the outgoing `input` array from the merged
+// request: items rebuilt from messages and raw items that had no representation
+// are interleaved back into the positions they were sent in.
 func mergeRawOnlyInputItems(structuredRaw json.RawMessage, requestExt *llm.OpenAIResponsesRequestExtensions) ([]json.RawMessage, bool) {
-	if requestExt == nil || len(requestExt.RawInputItems) == 0 {
+	if requestExt == nil || (len(requestExt.RawInputItems) == 0 && len(requestExt.OmittedInputItemIndices) == 0) {
 		return nil, false
 	}
+
+	fragments := requestExt.RawInputItems
 
 	var structuredItems []json.RawMessage
 	if len(structuredRaw) > 0 {
@@ -256,24 +401,44 @@ func mergeRawOnlyInputItems(structuredRaw json.RawMessage, requestExt *llm.OpenA
 		}
 	}
 
-	total := len(structuredItems) + len(requestExt.RawInputItems)
-	items := make([]json.RawMessage, 0, total)
+	maxOriginalIndex := len(structuredItems) + len(fragments) + len(requestExt.OmittedInputItemIndices) - 1
+	for _, fragment := range fragments {
+		if fragment.OriginalIndex > maxOriginalIndex {
+			maxOriginalIndex = fragment.OriginalIndex
+		}
+	}
+	for _, index := range requestExt.OmittedInputItemIndices {
+		if index < 0 {
+			return nil, false
+		}
+		if index > maxOriginalIndex {
+			maxOriginalIndex = index
+		}
+	}
+	items := make([]json.RawMessage, 0, len(structuredItems)+len(fragments))
 	structuredIndex := 0
-	rawByIndex := make(map[int]json.RawMessage, len(requestExt.RawInputItems))
-	for _, fragment := range requestExt.RawInputItems {
+	rawByIndex := make(map[int]json.RawMessage, len(fragments))
+	omittedByIndex := make(map[int]struct{}, len(requestExt.OmittedInputItemIndices))
+	for _, fragment := range fragments {
 		if len(fragment.Raw) == 0 || fragment.OriginalIndex < 0 {
 			return nil, false
 		}
 		rawByIndex[fragment.OriginalIndex] = cloneRaw(fragment.Raw)
 	}
+	for _, index := range requestExt.OmittedInputItemIndices {
+		omittedByIndex[index] = struct{}{}
+	}
 
-	for i := 0; i < total; i++ {
+	for i := 0; i <= maxOriginalIndex; i++ {
+		if _, omitted := omittedByIndex[i]; omitted {
+			continue
+		}
 		if raw, ok := rawByIndex[i]; ok {
 			items = append(items, raw)
 			continue
 		}
 		if structuredIndex >= len(structuredItems) {
-			return nil, false
+			continue
 		}
 		items = append(items, cloneRaw(structuredItems[structuredIndex]))
 		structuredIndex++
@@ -365,13 +530,27 @@ func structuredToolSignaturesMatch(structuredTools []json.RawMessage, expected [
 }
 
 func rawToolChoiceMatchesCurrentTools(raw json.RawMessage, current *ToolChoice) bool {
-	if current == nil {
-		return true
-	}
-
 	var rawChoice ToolChoice
 	if err := json.Unmarshal(raw, &rawChoice); err != nil {
 		return false
+	}
+
+	if (rawChoice.Type != nil && *rawChoice.Type == "allowed_tools") ||
+		(current != nil && current.Type != nil && *current.Type == "allowed_tools") {
+		if current == nil {
+			return false
+		}
+		// Matching only mode would restore a stale allowlist after a caller
+		// changed its members or replaced it with an unrestricted string mode.
+		expected, err := json.Marshal(&rawChoice)
+		if err != nil {
+			return false
+		}
+		actual, err := json.Marshal(current)
+		return err == nil && bytes.Equal(expected, actual)
+	}
+	if current == nil {
+		return true
 	}
 
 	currentSignature := toolChoiceSignature(current)

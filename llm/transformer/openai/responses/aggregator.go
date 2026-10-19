@@ -32,11 +32,13 @@ type streamAggregator struct {
 	outputItemsByID map[string]*aggregatedItem
 
 	// Usage
-	usage *Usage
+	usage         *Usage
+	terminalUsage *Usage
 
 	// Terminal response details
 	responseError     *Error
 	incompleteDetails *ResponseIncompleteDetails
+	terminalSeen      bool
 }
 
 // aggregatedItem holds the accumulated state for an output item.
@@ -228,11 +230,17 @@ func AggregateStreamChunks(_ context.Context, chunks []*httpclient.StreamEvent) 
 	}
 
 	meta := llm.ResponseMeta{
-		ID: agg.responseID,
+		ID:                 agg.responseID,
+		Completed:          agg.status == "completed",
+		AccountingEvidence: llm.AccountingEvidenceUnavailable,
 	}
 
 	if agg.usage != nil {
 		meta.Usage = agg.usage.ToUsage()
+	}
+	if agg.terminalSeen && agg.terminalUsage != nil {
+		meta.Usage = agg.terminalUsage.ToUsage()
+		meta.AccountingEvidence = llm.AccountingEvidenceExplicitFinal
 	}
 
 	return body, meta, nil
@@ -579,27 +587,46 @@ func (a *streamAggregator) processEvent(ev *StreamEvent) {
 		}
 
 	case StreamEventTypeResponseCompleted:
-		a.status = "completed"
-		if ev.Response != nil {
-			a.previousResponseID = ev.Response.PreviousResponseID
-			if ev.Response.Usage != nil {
-				a.usage = ev.Response.Usage
-			}
+		a.terminalSeen = true
+		a.terminalUsage = nil
+		if ev.Response != nil && ev.Response.Usage != nil {
+			a.terminalUsage = ev.Response.Usage
+		}
+		a.applyResponseSnapshot(ev.Response)
+		// The terminal event wins over a missing or stale in-progress status,
+		// while explicit failed, incomplete, and canceled outcomes are preserved.
+		if ev.Response == nil || ev.Response.Status == nil || a.status == "" || a.status == "in_progress" {
+			a.status = "completed"
 		}
 
 	case StreamEventTypeResponseFailed:
+		a.terminalSeen = true
+		a.terminalUsage = nil
+		if ev.Response != nil && ev.Response.Usage != nil {
+			a.terminalUsage = ev.Response.Usage
+		}
 		a.applyResponseSnapshot(ev.Response)
 		if ev.Response == nil || ev.Response.Status == nil {
 			a.status = "failed"
 		}
 
 	case StreamEventTypeResponseCancelled:
+		a.terminalSeen = true
+		a.terminalUsage = nil
+		if ev.Response != nil && ev.Response.Usage != nil {
+			a.terminalUsage = ev.Response.Usage
+		}
 		a.applyResponseSnapshot(ev.Response)
 		if ev.Response == nil || ev.Response.Status == nil {
 			a.status = "canceled"
 		}
 
 	case StreamEventTypeResponseIncomplete:
+		a.terminalSeen = true
+		a.terminalUsage = nil
+		if ev.Response != nil && ev.Response.Usage != nil {
+			a.terminalUsage = ev.Response.Usage
+		}
 		a.applyResponseSnapshot(ev.Response)
 		if ev.Response == nil || ev.Response.Status == nil {
 			a.status = "incomplete"

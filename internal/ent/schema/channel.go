@@ -82,6 +82,7 @@ func (Channel) Fields() []ent.Field {
 				"burncloud",
 				"modelscope",
 				"bailian",
+				"bailian_responses",
 				"bailian_anthropic",
 				"moonshot_coding",
 				"jina",
@@ -101,6 +102,14 @@ func (Channel) Fields() []ent.Field {
 				"groq",
 				"qiniu_anthropic",
 				"fenno",
+				"zenmux",
+				"zenmux_responses",
+				"zenmux_anthropic",
+				"zenmux_gemini",
+				"zenmux_video",
+				"commandcode",
+				"commandcode_anthropic",
+				"typesafe",
 			).
 			Annotations(
 				entgql.OrderField("TYPE"),
@@ -142,7 +151,11 @@ func (Channel) Fields() []ent.Field {
 		field.JSON("settings", &objects.ChannelSettings{}).
 			Default(&objects.ChannelSettings{
 				ModelMappings: []objects.ModelMapping{},
-			}).Optional().Annotations(),
+			}).
+			Annotations(
+				entgql.Directives(forceResolver()),
+			).
+			Optional(),
 		field.Int("ordering_weight").Default(0).Comment("Ordering weight for display sorting").
 			Annotations(
 				entgql.OrderField("ORDERING_WEIGHT"),
@@ -155,6 +168,12 @@ func (Channel) Fields() []ent.Field {
 		field.Time("auto_disabled_at").
 			Optional().Nillable().
 			Comment("Set when the channel was disabled automatically, and cleared when it recovers; distinguishes an automatic disable from an operator one.").
+			Annotations(
+				entgql.Skip(entgql.SkipMutationCreateInput, entgql.SkipMutationUpdateInput),
+			),
+		field.Time("auto_disable_expires_at").
+			Optional().Nillable().
+			Comment("When set together with auto_disabled_at, the cleanup task re-enables the channel after this instant. Operator disables leave this null.").
 			Annotations(
 				entgql.Skip(entgql.SkipMutationCreateInput, entgql.SkipMutationUpdateInput),
 			),

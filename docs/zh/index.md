@@ -44,13 +44,7 @@
 | [图像生成 API](api-reference/image-generation.md) | 图像生成接口文档 |
 | [嵌入 API](api-reference/embedding-api.md) | 向量嵌入接口文档 |
 | [重排序 API](api-reference/rerank-api.md) | 重排序接口文档 |
-
-### 🚀 部署指南
-
-| 文档 | 描述 |
-|------|------|
-| [Docker 部署](deployment/docker.md) | 使用 Docker 和 Docker Compose 部署 |
-| [配置详解](deployment/configuration.md) | 详细的配置选项说明 |
+| [System One API](api-reference/systemone-api.md) | 原生决策推理接口文档 |
 
 ### 🛠️ 开发文档
 

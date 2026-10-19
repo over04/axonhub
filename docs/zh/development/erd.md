@@ -1,12 +1,19 @@
-# AxonHub 实体关系图 (ERD)
+# AxonHub 实体关系图（ERD）
 
-## 概述
+## 文档目的
 
-AxonHub 采用多层级的权限管理架构，支持 Global（全局）和 Project（项目）两个层级。系统通过 RBAC（基于角色的访问控制）模型管理用户权限，实现细粒度的资源访问控制。
+本文档用于简要说明 AxonHub 的数据域和核心实体关系，不维护字段清单、数据库类型、默认值或索引。相关实现细节以 `internal/ent/schema/` 下的 Ent schema 为准。
 
----
+## 数据域概览
 
-## 核心概念
+| 数据域 | 主要实体 | 职责 |
+|---|---|---|
+| 身份与访问控制 | User、Project、UserProject、Role、UserRole、APIKey | 成员关系、认证、所有权和作用域权限 |
+| 提供商配置 | Model、Channel、ChannelModelPrice、ChannelModelPriceVersion | 可用模型、提供商连接和定价 |
+| 请求生命周期 | Request、RequestExecution、UsageLog | 入站请求、提供商执行、用量和成本 |
+| 可观测性 | Thread、Trace、ChannelProbe、ProviderQuotaStatus | 请求分组和提供商健康状态 |
+| 存储与配置 | DataStorage、System、Prompt、PromptProtectionRule | 请求载荷存储和可复用系统配置 |
+| 辅助访问能力 | OIDCIdentity、Invitation、APIKeyProfileTemplate、ChannelOverrideTemplate | 登录身份、邀请和可复用模板 |
 
 ### 层级结构
 
@@ -483,31 +490,36 @@ AxonHub 采用多层级的权限管理架构，支持 Global（全局）和 Proj
 ## 实体关系图
 
 ### Mermaid ERD
+## 核心实体关系
 
 ```mermaid
 erDiagram
-    AxonHub ||--o{ User : "manages"
-    AxonHub ||--o{ Project : "manages"
-    AxonHub ||--o{ Model : "defines"
-    AxonHub ||--o{ Channel : "manages"
-    AxonHub ||--o{ System : "configures"
-    AxonHub ||--o{ Role : "defines"
-    AxonHub ||--o{ DataStorage : "configures"
+    User ||--o{ UserProject : joins
+    Project ||--o{ UserProject : has_members
+    User ||--o{ UserRole : receives
+    Role ||--o{ UserRole : assigned_through
+    Project o|--o{ Role : defines
 
-    User ||--o{ ProjectUser : "belongs to"
-    Project ||--o{ ProjectUser : "has"
-    User ||--o{ UserRole : "has"
-    Role ||--o{ UserRole : "assigned to"
+    User o|--o{ APIKey : owns
+    Project ||--o{ APIKey : contains
+    Project ||--o{ Prompt : contains
+    Project ||--o{ APIKeyProfileTemplate : contains
+    User ||--o{ ChannelOverrideTemplate : owns
 
-    Project ||--o{ Role : "contains"
-    Project ||--o{ APIKey : "contains"
-    Project ||--o{ Thread : "contains"
-    Project ||--o{ Trace : "contains"
-    Thread ||--o{ Trace : "contains"
-    Trace ||--o{ Request : "contains"
+    Project ||--o{ Thread : contains
+    Project ||--o{ Trace : contains
+    Thread o|--o{ Trace : groups
+    Trace o|--o{ Request : groups
+    Project ||--o{ Request : owns
+    APIKey o|--o{ Request : authenticates
+    Channel o|--o{ Request : routes
+    DataStorage o|--o{ Request : stores
 
-    APIKey }o--|| Project : "belongs to"
-    APIKey ||--o{ Request : "authenticates"
+    Request ||--o{ RequestExecution : attempts
+    Request ||--o{ UsageLog : accounts
+    Channel ||--o{ RequestExecution : executes
+    Channel o|--o{ UsageLog : attributes
+    DataStorage o|--o{ RequestExecution : stores
 
     Request }o--|| Project : "belongs to"
     Request }o--o| APIKey : "uses"
@@ -655,41 +667,37 @@ erDiagram
         uuid role_id FK
         string scope
     }
+    Channel ||--o{ ChannelModelPrice : prices
+    ChannelModelPrice ||--o{ ChannelModelPriceVersion : versions
+    Channel ||--o{ ChannelProbe : probes
+    Channel o|--o| ProviderQuotaStatus : reports
 ```
 
-### Global Level 关系
+## 关系说明
 
-```
-Global
-├── Users (多个)
-│   ├── is_owner: true (Owner 用户)
-│   └── scopes + roles (自定义权限)
-├── Models (多个，所有 Project 共享)
-├── Channels (多个，所有 Project 共享)
-│   └── Channel Performance (每个 Channel 一个)
-├── Data Storages (多个，所有 Project 共享)
-├── System Configs (多个，所有 Project 共享)
-└── Global Roles (多个)
-```
+- 用户通过 `UserProject` 加入多个项目，并通过 `UserRole` 获得角色。
+- 角色可以是全局角色，也可以属于特定项目；权限由所有权、成员关系、角色和 scopes 共同决定。
+- 每个请求都属于一个项目。API Key、Trace、Channel 和 DataStorage 关联可能因请求来源或处理阶段而为空。
+- `Request` 表示面向客户端的一次请求，`RequestExecution` 表示一次具体的提供商执行；重试或故障转移会产生多个执行记录。
+- `UsageLog` 保存请求的计量信息，并可将用量归属到具体渠道。
+- `Thread` 用于组织 Trace，Trace 用于组织相关 Request。
 
-### Project Level 关系
+## 请求生命周期
 
-```
-Project
-├── Users (多个项目成员)
-│   ├── owner: true (Project Owner)
-│   └── project_roles + scopes (项目内权限)
-├── Project Roles (多个)
-├── API Keys (多个)
-├── Threads (多个)
-├── Traces (多个)
-├── Requests (多个)
-│   ├── Request Executions (多个)
-│   └── Usage Logs (多个)
-└── Usage Logs (多个)
+```text
+API Key 或管理员请求
+  -> Request
+  -> 一个或多个 RequestExecution
+  -> UsageLog
 ```
 
-### 详细关联关系
+请求与响应载荷可以保存在主数据库，也可以通过 `DataStorage` 存储；两种方式不会改变实体关系。
+
+## 数据边界
+
+- 项目级数据在查询和写入过程中必须保持项目作用域。
+- Channel、Model、System 和 DataStorage 定义等全局资源可以由多个项目共享，但仍受权限控制。
+- 需要保留历史身份或唯一性语义的实体，由 Ent schema 配置软删除。
 
 #### User 关联
 - **User** → **Projects** (多对多)：用户可以加入多个项目
@@ -703,221 +711,16 @@ Project
 - **Project** → **Traces** (一对多)：项目包含多个追踪
 - **Project** → **Requests** (一对多)：项目包含多个请求
 - **Project** → **Usage Logs** (一对多)：项目包含多个使用日志
+## 事实来源
 
-#### Channel 关联
-- **Channel** → **Requests** (一对多)：渠道可以处理多个请求
-- **Channel** → **Request Executions** (一对多)：渠道可以执行多个请求
-- **Channel** → **Usage Logs** (一对多)：渠道关联多个使用日志
-- **Channel** → **Channel Performance** (一对一)：每个渠道有一个性能记录
+本文档只用于理解数据域。精确字段、约束、索引和生成后的数据库定义请查看：
 
-#### Data Storage 关联
-- **Data Storage** → **Requests** (一对多)：可以存储多个请求
-- **Data Storage** → **Request Executions** (一对多)：可以存储多个请求执行
+- `internal/ent/schema/`：手工维护的实体定义和关系
+- `internal/ent/migrate/schema.go`：生成的迁移 schema
+- `internal/server/biz/`：生命周期和业务约束
 
-#### Request 关联
-- **Request** → **Project** (多对一)：请求属于一个项目
-- **Request** → **API Key** (多对一，可选)：请求可能使用一个 API Key
-- **Request** → **Trace** (多对一，可选)：请求可能属于一个追踪
-- **Request** → **Channel** (多对一，可选)：请求可能使用一个渠道
-- **Request** → **Data Storage** (多对一，可选)：请求可能存储在一个数据存储中
-- **Request** → **Request Executions** (一对多)：请求包含多个执行记录
-- **Request** → **Usage Logs** (一对多)：请求生成多个使用日志
+## 相关资源
 
-#### Role 关联
-- **Role** → **Users** (多对多)：角色可以分配给多个用户
-- **Role** → **Project** (多对一，可选)：项目级角色属于一个项目
-- **Role** → **Scopes** (一对多)：角色包含多个权限范围
-
-#### Thread 关联
-- **Thread** → **Project** (多对一)：线程属于一个项目
-- **Thread** → **Traces** (一对多)：线程包含多个追踪
-
-#### Trace 关联
-- **Trace** → **Project** (多对一)：追踪属于一个项目
-- **Trace** → **Thread** (多对一，可选)：追踪可能属于一个线程
-- **Trace** → **Requests** (一对多)：追踪包含多个请求
-
----
-
-## RBAC 权限模型
-
-### Scope 层级
-
-| Scope | Level | 描述 |
-|-------|-------|------|
-| `read_channels` | Global | 读取渠道信息 |
-| `write_channels` | Global | 创建/修改渠道 |
-| `read_users` | Global | 读取用户信息 |
-| `write_users` | Global | 创建/修改用户 |
-| `read_settings` | Global | 读取系统设置 |
-| `write_settings` | Global | 修改系统设置 |
-| `read_roles` | Global/Project | 读取角色信息 |
-| `write_roles` | Global/Project | 创建/修改角色 |
-| `read_api_keys` | Project | 读取 API Keys |
-| `write_api_keys` | Project | 创建/修改 API Keys |
-| `read_requests` | Project | 读取请求记录 |
-| `write_requests` | Project | 创建请求 |
-| `read_data_storages` | Global | 读取数据存储 |
-| `write_data_storages` | Global | 写入数据存储 |
-
-### Role 层级规则
-
-1. **Global Role**：
-   - 只能配置 Global Scopes
-   - 在所有 Projects 中生效
-   - 示例：System Admin, Channel Manager
-
-2. **Project Role**：
-   - 可以配置 Global 和 Project Scopes
-   - 只在特定 Project 中生效
-   - 示例：Project Admin, Developer, Viewer
-
-### 权限继承规则
-
-1. **Global Owner**：
-   - 拥有所有 Global 和 Project 权限
-   - 可以管理所有资源
-
-2. **Project Owner**：
-   - 拥有项目内所有权限
-   - 可以管理项目内所有资源
-
-3. **Custom Roles**：
-   - 根据 Role 中定义的 Scopes 获得权限
-   - Global Role 的权限在所有 Projects 中生效
-   - Project Role 的权限只在特定 Project 中生效
-
----
-
-## 数据流示例
-
-### API 请求流程
-
-```
-1. User 使用 API Key 发起请求
-   ↓
-2. 系统验证 API Key 权限（scopes）
-   ↓
-3. 创建 Request 记录（关联 User, Project, API Key）
-   ↓
-4. 选择合适的 Channel
-   ↓
-5. 创建 Request Execution 记录
-   ↓
-6. 调用 Channel 执行请求
-   ↓
-7. 记录响应到 Request Execution
-   ↓
-8. 更新 Request 状态和响应
-   ↓
-9. 创建 Usage Log 记录 Token 使用情况
-```
-
-### 权限检查流程
-
-```
-1. 用户发起操作请求
-   ↓
-2. 检查用户是否为 Owner
-   ├─ 是 → 允许操作
-   └─ 否 → 继续检查
-       ↓
-3. 检查用户的 Global Roles 和 Scopes
-   ├─ 有权限 → 允许操作
-   └─ 无权限 → 继续检查
-       ↓
-4. 检查用户在当前 Project 的 Roles 和 Scopes
-   ├─ 有权限 → 允许操作
-   └─ 无权限 → 拒绝操作
-```
-
----
-
-## 索引策略
-
-### 性能优化索引
-
-1. **User**：
-   - `email` (唯一索引)
-
-2. **Model**：
-   - `name` + `deleted_at` (唯一复合索引)
-
-3. **Channel**：
-   - `name` + `deleted_at` (唯一复合索引)
-
-4. **Channel Performance**：
-   - `channel_id` + `deleted_at` (唯一复合索引)
-
-5. **Channel Override Template**：
-   - `user_id` + `channel_type` + `name` + `deleted_at` (唯一复合索引)
-
-6. **Data Storage**：
-   - `name` (唯一索引)
-
-7. **Role**：
-   - `project_id` + `name` (唯一复合索引)
-   - `level` (普通索引)
-
-8. **API Key**：
-   - `key` (唯一索引)
-   - `user_id` (普通索引)
-   - `project_id` (普通索引)
-
-9. **Request**：
-   - `api_key_id` (普通索引)
-   - `channel_id` (普通索引)
-   - `trace_id` (普通索引)
-   - `created_at` (普通索引，用于时间范围查询)
-   - `status` (普通索引，用于状态过滤)
-
-10. **Thread**：
-    - `project_id` (普通索引)
-    - `thread_id` (唯一索引)
-
-11. **Trace**：
-    - `project_id` (普通索引)
-    - `trace_id` (唯一索引)
-    - `thread_id` (普通索引)
-
-12. **Request Execution**：
-    - `request_id` (普通索引)
-    - `channel_id` (普通索引)
-
-13. **Usage Log**：
-    - `request_id` (普通索引)
-    - `channel_id` (普通索引)
-    - `created_at` (普通索引)
-    - `model_id` (普通索引)
-    - `project_id` + `created_at` (复合索引，用于项目使用分析)
-    - `channel_id` + `created_at` (复合索引，用于渠道使用分析)
-
-14. **User Project**：
-    - `user_id` + `project_id` + `deleted_at` (唯一复合索引)
-    - `project_id` (普通索引)
-
-15. **User Role**：
-    - `user_id` + `role_id` + `deleted_at` (唯一复合索引)
-    - `role_id` (普通索引)
-
----
-
-## 软删除机制
-
-以下实体支持软删除（Soft Delete）：
-
-- User
-- Model
-- Channel
-- Channel Performance
-- Channel Override Template
-- Data Storage
-- System
-- Role
-- API Key
-- Thread
-- Trace
-- Request
-- Usage Log
-- User Project
-- User Role
+- [转换流程架构](transformation-flow.md)
+- [细粒度权限指南](../guides/permissions.md)
+- [追踪指南](../guides/tracing.md)

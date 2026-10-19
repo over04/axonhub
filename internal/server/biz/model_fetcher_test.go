@@ -281,6 +281,42 @@ func TestPrepareModelsEndpoint(t *testing.T) {
 			expectedURL: "https://open.bigmodel.cn/api/v4/models",
 		},
 		{
+			name:        "ZhipuAnthropic with raw URL marker (#)",
+			channelType: channel.TypeZhipuAnthropic,
+			baseURL:     "https://custom-proxy.example.com/v1#",
+			expectedURL: "https://custom-proxy.example.com/v1/models",
+		},
+		{
+			name:        "ZaiAnthropic with raw URL marker (#)",
+			channelType: channel.TypeZaiAnthropic,
+			baseURL:     "https://custom-proxy.example.com/v1#",
+			expectedURL: "https://custom-proxy.example.com/v1/models",
+		},
+		{
+			name:        "ZaiAnthropic with /v1 suffix",
+			channelType: channel.TypeZaiAnthropic,
+			baseURL:     "https://custom-proxy.example.com/v1",
+			expectedURL: "https://custom-proxy.example.com/v1/models",
+		},
+		{
+			name:        "Zai with raw URL marker (#)",
+			channelType: channel.TypeZai,
+			baseURL:     "https://custom-proxy.example.com/v1#",
+			expectedURL: "https://custom-proxy.example.com/v1/models",
+		},
+		{
+			name:        "Zai with /v1 suffix",
+			channelType: channel.TypeZai,
+			baseURL:     "https://custom-proxy.example.com/v1",
+			expectedURL: "https://custom-proxy.example.com/v1/models",
+		},
+		{
+			name:        "Zhipu with raw URL marker on official path",
+			channelType: channel.TypeZhipu,
+			baseURL:     "https://open.bigmodel.cn/api/paas/v4#",
+			expectedURL: "https://open.bigmodel.cn/api/paas/v4/models",
+		},
+		{
 			name:        "DeepseekAnthropic",
 			channelType: channel.TypeDeepseekAnthropic,
 			baseURL:     "https://api.deepseek.com/anthropic",
@@ -418,6 +454,30 @@ func TestPrepareModelsEndpoint(t *testing.T) {
 			baseURL:     "https://ark.cn-beijing.volces.com/api/compatible",
 			expectedURL: "https://ark.cn-beijing.volces.com/api/v3/models",
 		},
+		{
+			name:        "CommandCode provider base without /v1",
+			channelType: channel.TypeCommandcode,
+			baseURL:     "https://api.commandcode.ai/provider",
+			expectedURL: "https://api.commandcode.ai/provider/v1/models",
+		},
+		{
+			name:        "CommandCode anthropic provider base without /v1",
+			channelType: channel.TypeCommandcodeAnthropic,
+			baseURL:     "https://api.commandcode.ai/provider",
+			expectedURL: "https://api.commandcode.ai/provider/v1/models",
+		},
+		{
+			name:        "CommandCode with /v1 suffix",
+			channelType: channel.TypeCommandcode,
+			baseURL:     "https://api.commandcode.ai/provider/v1",
+			expectedURL: "https://api.commandcode.ai/provider/v1/models",
+		},
+		{
+			name:        "CommandCode anthropic with /v1 trailing slash",
+			channelType: channel.TypeCommandcodeAnthropic,
+			baseURL:     "https://api.commandcode.ai/provider/v1/",
+			expectedURL: "https://api.commandcode.ai/provider/v1/models",
+		},
 	}
 
 	for _, tt := range tests {
@@ -469,6 +529,23 @@ func TestPrepareModelsEndpointHeaders(t *testing.T) {
 			t.Errorf("Expected no Anthropic-Version header for Anthropic-like channels, got %q", headers.Get("Anthropic-Version"))
 		}
 	})
+}
+
+func TestPrepareModelsEndpointWithVertexBinding(t *testing.T) {
+	fetcher := NewModelFetcher(nil, nil)
+	projectID := "  project-123  "
+	region := " global "
+
+	got, _ := fetcher.prepareModelsEndpointWithVertexBinding(
+		channel.TypeGeminiVertex,
+		"https://aiplatform.googleapis.com/v1",
+		&projectID,
+		&region,
+	)
+	want := "https://aiplatform.googleapis.com/v1/projects/project-123/locations/global/publishers/google/models"
+	if got != want {
+		t.Fatalf("prepareModelsEndpointWithVertexBinding() URL = %q, want %q", got, want)
+	}
 }
 
 func TestFetchModelsGeminiPagination(t *testing.T) {
@@ -537,6 +614,35 @@ func TestFetchModelsGeminiPagination(t *testing.T) {
 			t.Fatalf("missing model id %q in result: %#v", want, result.Models)
 		}
 	}
+}
+
+// TestFetchModelsFamilyAnthropicWithRawURLMarker reproduces #2479: a Zai/Zhipu
+// Anthropic-format channel pointed at an OpenAI-compatible relay must send the
+// model-list probe to <relay>/models when the base URL carries the raw "#" marker,
+// instead of appending the official family path (/paas/v4/models).
+func TestFetchModelsFamilyAnthropicWithRawURLMarker(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"glm-5.2"},{"id":"glm-5.1"}]}`))
+	}))
+	defer server.Close()
+
+	fetcher := NewModelFetcher(httpclient.NewHttpClientWithClient(server.Client()), nil)
+	apiKey := "test-key"
+
+	result, err := fetcher.FetchModels(context.Background(), FetchModelsInput{
+		ChannelType: channel.TypeZaiAnthropic.String(),
+		BaseURL:     server.URL + "/v1#",
+		APIKey:      &apiKey,
+	})
+
+	require.NoError(t, err)
+	require.Nil(t, result.Error)
+	assert.Equal(t, []ModelIdentify{{ID: "glm-5.2"}, {ID: "glm-5.1"}}, result.Models)
 }
 
 func TestFetchModelsWithChannelIDUsesStoredCredentialsOnlyForStoredEndpoint(t *testing.T) {
@@ -1013,4 +1119,100 @@ func TestFetchCopilotModels(t *testing.T) {
 	if int(callCount.Load()) != 1 {
 		t.Errorf("expected 1 server call (cached), got %d", callCount.Load())
 	}
+}
+
+func TestFetchModelsCommandCodeSingleBearerRequest(t *testing.T) {
+	for _, channelType := range []channel.Type{channel.TypeCommandcode, channel.TypeCommandcodeAnthropic} {
+		t.Run(channelType.String(), func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.Header.Get("Authorization") != "Bearer test-key" {
+					t.Errorf("expected Authorization: Bearer test-key, got %q", r.Header.Get("Authorization"))
+				}
+				if r.Header.Get("X-Api-Key") != "" {
+					t.Errorf("commandcode must not send X-Api-Key, got %q", r.Header.Get("X-Api-Key"))
+				}
+				if r.URL.Path != "/v1/models" {
+					t.Errorf("expected /v1/models, got %q", r.URL.Path)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"data":[{"id":"claude-sonnet-4-5"},{"id":"gpt-5-codex"},{"id":"deepseek-v3"}]}`))
+			}))
+			defer server.Close()
+
+			key := "test-key"
+			fetcher := NewModelFetcher(httpclient.NewHttpClientWithClient(server.Client()), nil)
+			result, err := fetcher.FetchModels(context.Background(), FetchModelsInput{
+				ChannelType: channelType.String(),
+				BaseURL:     server.URL + "/v1",
+				APIKey:      &key,
+			})
+			require.NoError(t, err)
+			require.Nil(t, result.Error)
+			require.Equal(t, int32(1), calls.Load())
+
+			expectedIDs := []string{"gpt-5-codex", "deepseek-v3"}
+			if channelType == channel.TypeCommandcodeAnthropic {
+				expectedIDs = []string{"claude-sonnet-4-5"}
+			}
+			gotIDs := make([]string, len(result.Models))
+			for i, model := range result.Models {
+				gotIDs[i] = model.ID
+			}
+			require.Equal(t, expectedIDs, gotIDs)
+		})
+	}
+}
+
+func TestFetchModelsCommandCodeBaseWithoutV1AppendsV1(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("expected /v1/models, got %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer server.Close()
+
+	key := "test-key"
+	fetcher := NewModelFetcher(httpclient.NewHttpClientWithClient(server.Client()), nil)
+	result, err := fetcher.FetchModels(context.Background(), FetchModelsInput{
+		ChannelType: channel.TypeCommandcodeAnthropic.String(),
+		BaseURL:     server.URL, // no /v1: must become /v1/models
+		APIKey:      &key,
+	})
+	if err != nil {
+		t.Fatalf("FetchModels() error: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("FetchModels() unexpected error result: %s", *result.Error)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected exactly 1 request, got %d", calls.Load())
+	}
+}
+
+func TestFetchModelsCommandCodeRejectsHTTP(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+	}))
+	defer server.Close()
+
+	key := "test-key"
+	fetcher := NewModelFetcher(httpclient.NewHttpClientWithClient(server.Client()), nil)
+	result, err := fetcher.FetchModels(context.Background(), FetchModelsInput{
+		ChannelType: channel.TypeCommandcode.String(),
+		BaseURL:     server.URL,
+		APIKey:      &key,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result.Error)
+	if result.Error != nil {
+		require.Contains(t, *result.Error, "HTTPS")
+	}
+	require.Zero(t, calls.Load())
 }

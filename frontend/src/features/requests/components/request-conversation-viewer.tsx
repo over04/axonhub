@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useTranslation } from 'react-i18next';
 import { ArrowUp, ChevronDown, ChevronsDownUp, ChevronsUpDown, FileText, Layers, Search, Wrench } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -20,7 +21,7 @@ const ROLE_LABELS: Record<string, string> = {
   system: 'system',
   user: 'user',
   assistant: 'assistant',
-  tool: 'tool 结果',
+  tool: 'tool',
 };
 
 const ROLE_PILL_CLASSES: Record<string, string> = {
@@ -57,6 +58,12 @@ function prettyJsonBlock(value: unknown): string {
   }
 }
 
+function fmtToolChoice(value: unknown): ReactNode {
+  if (value === undefined || value === null) return '—';
+  if (typeof value === 'string') return value;
+  return <small className='font-mono text-[10.5px]'>{prettyJsonBlock(value)}</small>;
+}
+
 function matchesSearch(m: ConversationMessage, q: string): boolean {
   if (!q) return true;
   const hay: string[] = [];
@@ -66,8 +73,9 @@ function matchesSearch(m: ConversationMessage, q: string): boolean {
   return hay.join('\n').toLowerCase().includes(q);
 }
 
-/** Toggleable long-text block with "展开全部" / "收起". */
+/** Toggleable long-text block with "expand all" / "collapse". */
 function CollapseBlock({ text, expandAll, className }: { text: string; expandAll: boolean; className?: string }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const showFull = expandAll || expanded;
   const isLong = text.length > CHAR_LIMIT;
@@ -85,7 +93,7 @@ function CollapseBlock({ text, expandAll, className }: { text: string; expandAll
           onClick={() => setExpanded((v) => !v)}
           className='text-muted-foreground hover:text-foreground mt-1 flex w-full cursor-pointer items-center justify-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs transition-colors'
         >
-          {expanded ? '收起 ▲' : `展开全部（共 ${fmtNum(text.length)} 字符）▼`}
+          {expanded ? `${t('requests.conversation.collapse')} ▲` : `${t('requests.conversation.expandAllChars', { count: fmtNum(text.length) })} ▼`}
         </button>
       )}
     </div>
@@ -145,6 +153,7 @@ interface ToolCallCardProps {
 }
 
 function ToolCallCard({ call, resultIndex, showArgs, jumpTo }: ToolCallCardProps) {
+  const { t } = useTranslation();
   const [argsOpen, setArgsOpen] = useState(false);
   return (
     <div className='border-purple-500/40 bg-muted/30 border-l-4 rounded-md border p-2.5 pl-3'>
@@ -157,7 +166,7 @@ function ToolCallCard({ call, resultIndex, showArgs, jumpTo }: ToolCallCardProps
             onClick={() => jumpTo(resultIndex)}
             className='text-muted-foreground hover:text-foreground ml-auto cursor-pointer text-[11px] underline decoration-dotted underline-offset-2'
           >
-            结果 → #{resultIndex}
+            {t('requests.conversation.toolResultJump', { index: resultIndex })}
           </button>
         )}
       </div>
@@ -168,7 +177,7 @@ function ToolCallCard({ call, resultIndex, showArgs, jumpTo }: ToolCallCardProps
             onClick={() => setArgsOpen((v) => !v)}
             className='text-muted-foreground hover:text-foreground mt-1.5 cursor-pointer text-[11px] font-medium'
           >
-            {argsOpen ? '收起参数 ▲' : '查看参数 JSON ▼'}
+            {argsOpen ? `${t('requests.conversation.collapse')} ▲` : `${t('requests.conversation.viewArgsJson')} ▼`}
           </button>
           {argsOpen && (
             <pre className='bg-muted/40 border-border mt-1 overflow-x-auto rounded-md border p-2 font-mono text-[11.5px] text-muted-foreground'>
@@ -188,6 +197,7 @@ interface ToolResultCardProps {
 }
 
 function ToolResultCard({ callIndex, content, jumpTo }: ToolResultCardProps) {
+  const { t } = useTranslation();
   return (
     <div className='border-orange-500/40 bg-muted/30 border-l-4 rounded-md border p-2.5 pl-3'>
       <div className='mb-1 flex flex-wrap items-center gap-2'>
@@ -197,7 +207,7 @@ function ToolResultCard({ callIndex, content, jumpTo }: ToolResultCardProps) {
             type='button'
             onClick={() => jumpTo(callIndex)}
             className='text-muted-foreground hover:text-foreground cursor-pointer font-mono text-[11px] underline decoration-dotted underline-offset-2'
-            title='跳转到工具调用'
+            title={t('requests.conversation.jumpToToolCall')}
           >
             {callIndex} ↑
           </button>
@@ -260,7 +270,7 @@ function MessageCard({
         <div className='border-amber-500/40 bg-amber-500/5 rounded-md border border-dashed p-2.5'>
           <div className='mb-1 text-[11px] font-semibold tracking-wider text-amber-600 dark:text-amber-400'>◆ REASONING</div>
           <details className='group'>
-            <summary className='text-muted-foreground cursor-pointer text-[11.5px] underline decoration-dotted underline-offset-2'>展开思考过程</summary>
+            <summary className='text-muted-foreground cursor-pointer text-[11.5px] underline decoration-dotted underline-offset-2'>{t('requests.conversation.expandReasoning')}</summary>
             <CollapseBlock text={message.reasoning} expandAll={expandAll} className='mt-1.5' />
           </details>
         </div>
@@ -399,44 +409,9 @@ export function RequestConversationViewer({ body, format, className }: RequestCo
   const [rawOpenIndex, setRawOpenIndex] = useState<number | null>(null);
   const [showBackTop, setShowBackTop] = useState(false);
 
-  const jumpTo = useCallback((target: string | number) => {
-    const el = typeof target === 'number' ? document.getElementById(`conv-msg-${target}`) : document.getElementById(target);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, []);
-
   const rootRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    let scroller: HTMLElement | null = null;
-    let node: HTMLElement | null = rootRef.current;
-    while (node) {
-      const style = getComputedStyle(node);
-      if (/(auto|scroll|overlay)/.test(style.overflowY)) {
-        scroller = node;
-        break;
-      }
-      node = node.parentElement;
-    }
-    const target = scroller ?? window;
-    const onScroll = () => {
-      const top = scroller ? scroller.scrollTop : window.scrollY;
-      setShowBackTop(top > 400);
-    };
-    target.addEventListener('scroll', onScroll, { passive: true });
-    return () => target.removeEventListener('scroll', onScroll);
-  }, []);
-
-  const scrollToTop = useCallback(() => {
-    let node: HTMLElement | null = rootRef.current;
-    while (node) {
-      const style = getComputedStyle(node);
-      if (/(auto|scroll|overlay)/.test(style.overflowY)) {
-        node.scrollTo({ top: 0, behavior: 'smooth' });
-        return;
-      }
-      node = node.parentElement;
-    }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const virtualizerRef = useRef<ReturnType<typeof useVirtualizer<HTMLDivElement, HTMLDivElement>> | null>(null);
 
   const toolCallByCallId = useMemo(() => {
     const map = new Map<string, number>();
@@ -465,6 +440,52 @@ export function RequestConversationViewer({ body, format, className }: RequestCo
       return matchesSearch(m, q);
     });
   }, [data, search, roleFilter, showSystem]);
+
+  // The message list owns its own scroll container, so the back-to-top control
+  // has to watch and drive that element rather than an ancestor.
+  useEffect(() => {
+    const scroller = messagesScrollRef.current;
+    if (!scroller) return;
+    const onScroll = () => setShowBackTop(scroller.scrollTop > 400);
+    onScroll();
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => scroller.removeEventListener('scroll', onScroll);
+    // Re-runs when the list appears or is emptied, because the scroll container is
+    // unmounted while no message matches the current filter.
+  }, [visibleMessages.length]);
+
+  const scrollToTop = useCallback(() => {
+    messagesScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  // A long conversation can hold dozens of messages with tens of thousands of
+  // characters each. Rendering every card at once blocks the main thread, so only
+  // the messages near the viewport are mounted.
+  const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: visibleMessages.length,
+    getScrollElement: () => messagesScrollRef.current,
+    estimateSize: () => 180,
+    overscan: 6,
+    // Key by message index: filtering remounts the list, and a positional key would
+    // let a recycled row reuse another message's measured height.
+    getItemKey: useCallback((index: number) => visibleMessages[index]?.index ?? index, [visibleMessages]),
+  });
+  virtualizerRef.current = virtualizer;
+
+  const jumpTo = useCallback(
+    (target: string | number) => {
+      if (typeof target === 'number') {
+        const virtualIndex = visibleMessages.findIndex((message) => message.index === target);
+        if (virtualIndex >= 0) {
+          virtualizerRef.current?.scrollToIndex(virtualIndex, { align: 'start' });
+          return;
+        }
+      }
+      const el = typeof target === 'number' ? document.getElementById(`conv-msg-${target}`) : document.getElementById(target);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    [visibleMessages]
+  );
 
   const sidebarGroups = useMemo(() => {
     if (!data) return [] as { role: string; items: { index: number; preview: string }[] }[];
@@ -571,7 +592,7 @@ export function RequestConversationViewer({ body, format, className }: RequestCo
         <Stat label={t('requests.conversation.statToolCalls')} value={fmtNum(totalToolCalls)} />
         <Stat label='max_tokens' value={data.maxTokens != null ? fmtNum(data.maxTokens) : '—'} />
         <Stat label='stream' value={String(data.stream ?? '—')} />
-        <Stat label='tool_choice' value={String(data.toolChoice ?? '—')} />
+        <Stat label='tool_choice' value={fmtToolChoice(data.toolChoice)} />
         <Stat label={t('requests.conversation.statChars')} value={fmtNum(totalChars)} />
         <Stat label='≈Tokens' value={fmtNum(Math.round(totalChars / 3.5))} />
         <Stat
@@ -625,22 +646,34 @@ export function RequestConversationViewer({ body, format, className }: RequestCo
                 <p className='text-muted-foreground text-sm'>{t('requests.conversation.noMatch')}</p>
               </div>
             ) : (
-              <div className='space-y-3'>
-                {visibleMessages.map((m) => (
-                  <MessageCard
-                    key={m.index}
-                    message={m}
-                    showReasoning={showReasoning}
-                    showToolArgs={showToolArgs}
-                    showToolResult={showToolResult}
-                    expandAll={expandAllContent}
-                    toolCallByCallId={toolCallByCallId}
-                    toolResultByCallId={toolResultByCallId}
-                    jumpTo={jumpTo}
-                    onToggleRaw={toggleRaw}
-                    rawOpen={rawOpenIndex === m.index}
-                  />
-                ))}
+              <div ref={messagesScrollRef} className='max-h-[70vh] overflow-y-auto overscroll-contain'>
+                <div className='relative' style={{ height: virtualizer.getTotalSize() }}>
+                  {virtualizer.getVirtualItems().map((virtualItem) => {
+                    const message = visibleMessages[virtualItem.index];
+                    return (
+                      <div
+                        key={message.index}
+                        data-index={virtualItem.index}
+                        ref={virtualizer.measureElement}
+                        className='absolute left-0 w-full pb-3'
+                        style={{ transform: `translateY(${virtualItem.start}px)` }}
+                      >
+                        <MessageCard
+                          message={message}
+                          showReasoning={showReasoning}
+                          showToolArgs={showToolArgs}
+                          showToolResult={showToolResult}
+                          expandAll={expandAllContent}
+                          toolCallByCallId={toolCallByCallId}
+                          toolResultByCallId={toolResultByCallId}
+                          jumpTo={jumpTo}
+                          onToggleRaw={toggleRaw}
+                          rawOpen={rawOpenIndex === message.index}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

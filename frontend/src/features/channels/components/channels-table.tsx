@@ -6,7 +6,6 @@ import {
   RowData,
   RowSelectionState,
   SortingState,
-  VisibilityState,
   flexRender,
   getCoreRowModel,
   getExpandedRowModel,
@@ -14,7 +13,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { IconArchive, IconBan, IconCheck, IconFlask, IconTrash, IconX } from '@tabler/icons-react';
+import { IconArchive, IconBan, IconCheck, IconFlask, IconShieldOff, IconTag, IconTrash, IconX } from '@tabler/icons-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -22,6 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { TableSkeleton } from '@/components/ui/table-skeleton';
 import { ServerSidePagination } from '@/components/server-side-pagination';
 import { useChannels } from '../context/channels-context';
+import type { ChannelListColumnVisibility } from '../data/channels';
 import { Channel, ChannelConnection } from '../data/schema';
 import { ChannelExpandedRow } from './channel-expanded-row';
 import { DataTableToolbar } from './data-table-toolbar';
@@ -62,14 +62,10 @@ interface DataTableProps {
   onStatusFilterChange: (filters: string[]) => void;
   onTagFilterChange: (filter: string) => void;
   onModelFilterChange: (filter: string) => void;
-  onHealthColumnVisibilityChange?: (visible: boolean) => void;
+  columnVisibility: ChannelListColumnVisibility;
+  onColumnVisibilityChange: React.Dispatch<React.SetStateAction<ChannelListColumnVisibility>>;
   canWrite?: boolean;
 }
-
-const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
-  tags: false,
-  proxy: false,
-};
 
 export function ChannelsTable({
   columns,
@@ -97,7 +93,8 @@ export function ChannelsTable({
   onStatusFilterChange,
   onTagFilterChange,
   onModelFilterChange,
-  onHealthColumnVisibilityChange,
+  columnVisibility,
+  onColumnVisibilityChange,
   canWrite = true,
 }: DataTableProps) {
   const { t } = useTranslation();
@@ -105,19 +102,6 @@ export function ChannelsTable({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [expanded, setExpanded] = useState<ExpandedState>({});
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-
-  // Load column visibility from localStorage with useMemo to avoid re-parsing
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
-    const stored = localStorage.getItem('channels-table-column-visibility');
-    if (stored) {
-      try {
-        return { ...DEFAULT_COLUMN_VISIBILITY, ...JSON.parse(stored) };
-      } catch {
-        return DEFAULT_COLUMN_VISIBILITY;
-      }
-    }
-    return DEFAULT_COLUMN_VISIBILITY; // Hide optional columns by default but keep them available in column settings
-  });
 
   // Sync server state to local column filters using useMemo instead of useEffect
   useEffect(() => {
@@ -224,7 +208,7 @@ export function ChannelsTable({
     onExpandedChange: setExpanded,
     onSortingChange,
     onColumnFiltersChange: handleColumnFiltersChange,
-    onColumnVisibilityChange: setColumnVisibility,
+    onColumnVisibilityChange,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -285,7 +269,7 @@ export function ChannelsTable({
   }, [data, rowSelection]);
 
   return (
-    <div className='flex flex-1 flex-col overflow-hidden'>
+    <div className='flex min-w-0 flex-1 flex-col overflow-hidden'>
       <DataTableToolbar
         table={table}
         isFiltered={isFiltered}
@@ -404,6 +388,25 @@ export function ChannelsTable({
               <span className='text-muted-foreground text-sm'>{t('common.selected')}</span>
             </div>
             <div className='bg-border mx-2 h-6 w-px' />
+            <Button
+              variant='ghost'
+              size='icon'
+              className='h-8 w-8 text-violet-600 hover:bg-violet-100 hover:text-violet-700'
+              onClick={() => setOpen('bulkManageTags')}
+              title={t('channels.actions.bulkManageTags')}
+              aria-label={t('channels.actions.bulkManageTags')}
+            >
+              <IconTag className='h-4 w-4' />
+            </Button>
+            <Button
+              variant='ghost'
+              size='icon'
+              className='h-8 w-8 text-violet-600 hover:bg-violet-100 hover:text-violet-700'
+              onClick={() => setOpen('bulkAutoDisable')}
+              title={t('channels.bulkAutoDisable.button')}
+            >
+              <IconShieldOff className='h-4 w-4' />
+            </Button>
             <Button
               variant='ghost'
               size='icon'

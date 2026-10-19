@@ -23,6 +23,10 @@ var (
 	// terminal event. Pipelines may retry it only before meaningful output is
 	// committed to the caller.
 	ErrStreamIncomplete = errors.New("stream ended without terminal event")
+
+	// ErrEmptyResponse means a streaming response completed without meaningful
+	// content. Pipelines may retry it before content is committed.
+	ErrEmptyResponse = errors.New("empty response detected")
 )
 
 // Request is the unified llm request model for AxonHub, to keep compatibility with major app and framework.
@@ -178,7 +182,10 @@ type Request struct {
 	// Any of "text", "audio", "image".
 	Modalities []string `json:"modalities,omitempty"`
 
-	// Controls effort on reasoning for reasoning models. It can be set to "none", "low", "medium", or "high".
+	// Controls effort on reasoning for reasoning models. Unified levels: "none",
+	// "minimal", "low", "medium", "high", "xhigh", "max" (see llm/reasoning.go).
+	// Outbound transformers map these to their native representation; unknown
+	// values pass through verbatim so unsupported levels surface upstream errors.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 
 	// Reasoning budget for reasoning models.
@@ -239,6 +246,9 @@ type Request struct {
 	// Rerank is the rerank request, will be set if the request is rerank request.
 	Rerank *RerankRequest `json:"rerank,omitempty"`
 
+	// SystemOne is the System One request, will be set if the request is System One request.
+	SystemOne *SystemOneRequest `json:"systemone,omitempty"`
+
 	// Image is the image request, will be set if the request is image request.
 	Image *ImageRequest `json:"image,omitempty"`
 
@@ -262,6 +272,12 @@ type Request struct {
 
 	// Moderation is the standalone /v1/moderations request payload.
 	Moderation *ModerationRequest `json:"moderation_request,omitempty"`
+
+	// AlphaSearch is the raw Codex/CPA /v1/alpha/search request payload.
+	AlphaSearch *AlphaSearchRequest `json:"alpha_search_request,omitempty"`
+
+	// Decisions is the raw OpenAI /v1/decisions request payload.
+	Decisions *DecisionsRequest `json:"decisions_request,omitempty"`
 
 	// RawRequest is the raw request from the client.
 	RawRequest *httpclient.Request `json:"raw_request,omitempty"`
@@ -574,12 +590,19 @@ type ImageURL struct {
 type VideoURL struct {
 	// URL is the URL of the video.
 	URL string `json:"url"`
+
+	// MIMEType is the MIME type of the video when provided by the source protocol.
+	MIMEType string `json:"mime_type,omitempty"`
 }
 
 // DocumentURL represents a document URL (PDF, Word, etc.)
 type DocumentURL struct {
 	// URL is the URL of the document (data URL or regular URL).
 	URL string `json:"url"`
+	// FileID is the provider file identifier when the document was uploaded separately.
+	FileID string `json:"file_id,omitempty"`
+	// Filename is the document name used for inline file data.
+	Filename string `json:"filename,omitempty"`
 
 	// MIMEType is the MIME type of the document.
 	// e.g. "application/pdf", "application/msword"
@@ -594,6 +617,12 @@ type InputAudio struct {
 
 	// Base64 encoded audio data.
 	Data string `json:"data"`
+
+	// URL is the URL of remote audio data.
+	URL string `json:"url,omitempty"`
+
+	// MIMEType is the MIME type of the audio when provided by the source protocol.
+	MIMEType string `json:"mime_type,omitempty"`
 }
 
 // CompactContent represents compact content from OpenAI Responses API compaction.
@@ -647,6 +676,13 @@ type ResponseFormat struct {
 //   - Video: VideoResponse for video generation responses
 //   - Compact: CompactResponse for compact responses
 //   - Completion: CompletionResponse for legacy completion responses
+type StreamCompletionEvidence string
+
+const (
+	StreamCompletionEvidenceNone          StreamCompletionEvidence = ""
+	StreamCompletionEvidenceOpenAIChatEOF StreamCompletionEvidence = "openai_chat_clean_eof"
+)
+
 type Response struct {
 	ID string `json:"id"`
 
@@ -691,6 +727,9 @@ type Response struct {
 	// Rerank is the rerank response, will present if the request is rerank request.
 	Rerank *RerankResponse `json:"rerank,omitempty"`
 
+	// SystemOne is the System One response, will present if the request is System One request.
+	SystemOne *SystemOneResponse `json:"systemone,omitempty"`
+
 	// Image is the image response, will present if the request is image request.
 	Image *ImageResponse `json:"image,omitempty"`
 
@@ -722,6 +761,12 @@ type Response struct {
 	// Moderation is the standalone /v1/moderations response payload.
 	Moderation *ModerationResponse `json:"moderation,omitempty"`
 
+	// AlphaSearch is the raw Codex/CPA /v1/alpha/search response payload.
+	AlphaSearch *AlphaSearchResponse `json:"alpha_search_response,omitempty"`
+
+	// Decisions is the raw OpenAI /v1/decisions response payload.
+	Decisions *DecisionsResponse `json:"decisions_response,omitempty"`
+
 	// RequestType is the outbound request type from the llm service.
 	// e.g. the request from the chat/completions endpoint is in the chat type.
 	// if it is embedding request, it will be embedding.
@@ -734,7 +779,8 @@ type Response struct {
 
 	// TransformerMetadata stores metadata from transformers that process the response.
 	// This field is ignored when serializing to JSON and is only used internally by transformers.
-	TransformerMetadata map[string]any `json:"transformer_metadata,omitempty"`
+	TransformerMetadata      map[string]any           `json:"transformer_metadata,omitempty"`
+	StreamCompletionEvidence StreamCompletionEvidence `json:"-"`
 }
 
 // Choice represents a choice in the response.
@@ -780,10 +826,41 @@ type TopLogprob struct {
 	Bytes   []int   `json:"bytes,omitempty"`
 }
 
+type AccountingEvidence string
+
+const (
+	AccountingEvidenceUnavailable       AccountingEvidence = "unavailable"
+	AccountingEvidenceExplicitFinal     AccountingEvidence = "explicit-final"
+	AccountingEvidenceCleanEndCandidate AccountingEvidence = "clean-end-candidate"
+)
+
+type SourceEndReason string
+
+const (
+	SourceEndUnknown  SourceEndReason = "unknown"
+	SourceEndCleanEOF SourceEndReason = "clean-eof"
+	SourceEndSemantic SourceEndReason = "semantic"
+	SourceEndError    SourceEndReason = "error"
+	SourceEndCanceled SourceEndReason = "canceled"
+	SourceEndBudget   SourceEndReason = "budget"
+)
+
+func (m ResponseMeta) AccountingFinal(sourceEnd SourceEndReason) bool {
+	switch m.AccountingEvidence {
+	case AccountingEvidenceExplicitFinal:
+		return true
+	case AccountingEvidenceCleanEndCandidate:
+		return sourceEnd == SourceEndCleanEOF || sourceEnd == SourceEndSemantic
+	default:
+		return false
+	}
+}
+
 type ResponseMeta struct {
-	ID        string `json:"id"`
-	Usage     *Usage `json:"usage"`
-	Completed bool   `json:"completed,omitempty"`
+	ID                 string             `json:"id"`
+	Usage              *Usage             `json:"usage"`
+	Completed          bool               `json:"completed,omitempty"`
+	AccountingEvidence AccountingEvidence `json:"-"`
 }
 
 // Usage Represents the total token usage per request to OpenAI.
@@ -810,6 +887,10 @@ type Usage struct {
 	// Output only. A detailed breakdown of the token count for each modality in the candidates.
 	// For gemini models only.
 	CompletionModalityTokenDetails []ModalityTokenCount `json:"completion_modality_token_details,omitempty"`
+
+	// Cost is the request cost calculated by AxonHub from channel model prices.
+	// Omitted when no matching price is configured or usage-cost injection is disabled.
+	Cost *float64 `json:"cost,omitempty"`
 }
 
 func (u *Usage) GetCompletionTokens() *int64 {
@@ -860,13 +941,26 @@ type PromptTokensDetails struct {
 
 // ResponseError represents an error response.
 type ResponseError struct {
-	StatusCode int         `json:"-"`
-	Detail     ErrorDetail `json:"error"`
+	StatusCode         int         `json:"-"`
+	Detail             ErrorDetail `json:"error"`
+	SuppressStatusText bool        `json:"-"`
+
+	// Cause keeps the underlying error (for example a transport failure) so callers
+	// can still match it with errors.Is / errors.As after classification.
+	Cause error `json:"-"`
+}
+
+// Unwrap exposes the underlying cause, if any.
+func (e *ResponseError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
 }
 
 func (e ResponseError) Error() string {
 	sb := strings.Builder{}
-	if e.StatusCode != 0 {
+	if e.StatusCode != 0 && !e.SuppressStatusText {
 		fmt.Fprintf(&sb, "Request failed: %s, ", http.StatusText(e.StatusCode))
 	}
 

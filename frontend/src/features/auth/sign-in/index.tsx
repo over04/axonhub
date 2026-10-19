@@ -1,3 +1,4 @@
+import { useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,7 @@ import './login-styles.css';
 
 export default function SignIn() {
   const { t } = useTranslation();
+  const { redirect } = useSearch({ from: '/(auth)/sign-in' });
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
   const isSignUp = mode === 'sign-up';
 
@@ -45,7 +47,7 @@ export default function SignIn() {
             {t('auth.signUp.form.createAccount')}
           </Button>
         </div>
-        {isSignUp ? <SignUpForm /> : <UserAuthForm />}
+        {isSignUp ? <SignUpForm /> : <UserAuthForm redirect={redirect} />}
       </TwoColumnAuth>
     </AuthLayout>
   );

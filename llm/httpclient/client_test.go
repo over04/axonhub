@@ -303,7 +303,7 @@ func TestHttpClientImpl_DoStream(t *testing.T) {
 		serverResponse  func(w http.ResponseWriter, r *http.Request)
 		wantErr         bool
 		wantErrContains string
-		validate        func(stream any) bool
+		validate        func(stream StreamDecoder) bool
 	}{
 		{
 			name: "successful streaming request",
@@ -326,6 +326,8 @@ func TestHttpClientImpl_DoStream(t *testing.T) {
 				w.Header().Set("Content-Type", "text/event-stream")
 				w.Header().Set("Cache-Control", "no-cache")
 				w.Header().Set("Connection", "keep-alive")
+				w.Header().Set(ReasoningIncludedHeader, "true")
+				w.Header().Set("Set-Cookie", "secret=1")
 				w.WriteHeader(http.StatusOK)
 
 				// Write SSE events
@@ -348,9 +350,9 @@ func TestHttpClientImpl_DoStream(t *testing.T) {
 				}
 			},
 			wantErr: false,
-			validate: func(stream any) bool {
-				// This is a basic validation - in a real test we'd iterate through the stream
-				return stream != nil
+			validate: func(stream StreamDecoder) bool {
+				headers := GetResponseHeaders(stream)
+				return headers.Get(ReasoningIncludedHeader) == "true" && headers.Get("Set-Cookie") == ""
 			},
 		},
 		{
@@ -367,7 +369,7 @@ func TestHttpClientImpl_DoStream(t *testing.T) {
 				w.Write([]byte(`{"error": "unauthorized"}`))
 			},
 			wantErr: true,
-			validate: func(stream any) bool {
+			validate: func(stream StreamDecoder) bool {
 				return stream == nil
 			},
 		},
@@ -416,6 +418,15 @@ func TestNewHttpClient_WithInsecureSkipVerify_PreservesDefaultTransportSettings(
 	require.NotNil(t, tr.Proxy)
 	require.NotNil(t, tr.TLSClientConfig)
 	require.True(t, tr.TLSClientConfig.InsecureSkipVerify)
+}
+
+func TestNewHttpClientWithProxy_RejectsHTTPSDowngrade(t *testing.T) {
+	client := NewHttpClientWithProxy(nil, WithInsecureSkipVerify(true)).WithRejectHTTPSDowngrade().WithProxy(nil)
+	previous := httptest.NewRequest(http.MethodGet, "https://example.com", nil)
+	next := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
+	err := client.GetNativeClient().CheckRedirect(next, []*http.Request{previous})
+
+	require.ErrorContains(t, err, "refusing HTTPS to HTTP redirect")
 }
 
 type proxyConnectionIDContextKey struct{}

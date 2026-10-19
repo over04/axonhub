@@ -13,11 +13,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 
+	"github.com/looplj/axonhub/internal/contexts"
 	"github.com/looplj/axonhub/internal/log"
 	"github.com/looplj/axonhub/internal/server/orchestrator"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/streams"
+	"github.com/looplj/axonhub/llm/transformer/openai/codex"
 )
 
 const (
@@ -47,6 +49,7 @@ type ChatCompletionHandlers struct {
 	StreamWriter               StreamWriter
 	sseKeepAlive               SSEKeepAliveConfig
 	sseHeartbeatFormat         sseHeartbeatFormat
+	streamAdapterFactory       streamAdapterFactory
 }
 
 func NewChatCompletionHandlers(orchestrator *orchestrator.ChatCompletionOrchestrator) *ChatCompletionHandlers {
@@ -99,8 +102,11 @@ func (handlers *ChatCompletionHandlers) ChatCompletionWithRequest(c *gin.Context
 		return
 	}
 
+	writeForwardResponseHeaders(c, genericReq, result)
+
 	if result.ChatCompletion != nil {
 		resp := result.ChatCompletion
+		copyCodexTurnStateHeader(c.Writer.Header(), resp.Headers)
 
 		contentType := "application/json"
 		if ct := resp.Headers.Get("Content-Type"); ct != "" {
@@ -117,6 +123,9 @@ func (handlers *ChatCompletionHandlers) ChatCompletionWithRequest(c *gin.Context
 			log.Debug(ctx, "Close chat stream")
 
 			err := result.ChatCompletionStream.Close()
+			if waiter, ok := result.ChatCompletionStream.(streams.FinalizationWaiter); ok {
+				waiter.WaitForFinalization()
+			}
 			if err != nil {
 				logger.Error(ctx, "Error closing stream", log.Cause(err))
 			}
@@ -125,13 +134,93 @@ func (handlers *ChatCompletionHandlers) ChatCompletionWithRequest(c *gin.Context
 		c.Header("Access-Control-Allow-Origin", "*")
 
 		stream := newUpstreamErrorStream(ctx, result.ChatCompletionStream, handlers.ChatCompletionOrchestrator.SystemService)
+		if strings.HasSuffix(genericReq.Path, "/responses") {
+			stream = primeCodexTurnStateHeader(c.Writer.Header(), stream)
+		}
 		if handlers.StreamWriter != nil {
 			handlers.StreamWriter(c, stream)
 			return
 		}
 
-		writeSSEStream(c, stream, FormatStreamError, handlers.sseKeepAlive, handlers.sseHeartbeatFormat)
+		handlers.writeSSEStream(c, stream)
 	}
+}
+
+func writeForwardResponseHeaders(c *gin.Context, request *httpclient.Request, result orchestrator.ChatCompletionResult) {
+	if !result.CodexResponseHeadersSupported || request == nil || !strings.HasSuffix(request.Path, "/responses") || codex.GetSessionIDFromHeaders(request.Headers) == "" {
+		return
+	}
+
+	var headers http.Header
+	if result.ChatCompletion != nil {
+		headers = result.ChatCompletion.Headers
+	} else {
+		headers = httpclient.GetResponseHeaders(result.ChatCompletionStream)
+	}
+
+	_ = httpclient.MergeForwardResponseHeaders(c.Writer.Header(), headers)
+}
+
+func copyCodexTurnStateHeader(dst, src http.Header) {
+	if dst == nil || src == nil {
+		return
+	}
+
+	if value := src.Get(codex.TurnStateHeader); value != "" {
+		dst.Set(codex.TurnStateHeader, value)
+	}
+}
+
+// primedStream keeps the first upstream event available after response headers
+// have been copied to the downstream writer. HTTP stream executors expose
+// transport headers on that first event, and SSE headers must be sent before
+// the first flush.
+type primedStream struct {
+	stream  streams.Stream[*httpclient.StreamEvent]
+	first   *httpclient.StreamEvent
+	pending bool
+}
+
+func primeCodexTurnStateHeader(dst http.Header, stream streams.Stream[*httpclient.StreamEvent]) streams.Stream[*httpclient.StreamEvent] {
+	if stream == nil || !stream.Next() {
+		return stream
+	}
+
+	first := stream.Current()
+	if first != nil {
+		copyCodexTurnStateHeader(dst, first.Headers)
+	}
+
+	return &primedStream{stream: stream, first: first, pending: true}
+}
+
+func (s *primedStream) Next() bool {
+	if s.pending {
+		return true
+	}
+
+	return s.stream.Next()
+}
+
+func (s *primedStream) Current() *httpclient.StreamEvent {
+	if s.pending {
+		s.pending = false
+		return s.first
+	}
+
+	return s.stream.Current()
+}
+
+func (s *primedStream) Err() error {
+	return s.stream.Err()
+}
+
+func (s *primedStream) ExpectedStreamChoices() int {
+	return streamExpectedChoices(s.stream)
+}
+
+func (s *primedStream) Close() error {
+	return s.stream.Close()
 }
 
 // StreamErrorFormatter formats a stream error into a JSON-serializable object for SSE error events.
@@ -143,6 +232,8 @@ type StreamErrorFormatter func(ctx context.Context, err error) any
 // (see passThroughChannelStream.Next); the cap only guards against implementations
 // that ignore it. Pass-through channel buffers hold 64 events, so 256 is generous.
 const maxStreamEventsAfterCancel = 256
+
+const sseWriteTimeout = 30 * time.Second
 
 // WriteSSEStream writes stream events as Server-Sent Events (SSE) with default error formatting.
 func WriteSSEStream(c *gin.Context, stream streams.Stream[*httpclient.StreamEvent]) {
@@ -161,23 +252,30 @@ func writeSSEStream(
 	keepAlive SSEKeepAliveConfig,
 	heartbeatFormat sseHeartbeatFormat,
 ) {
+	writeEncodedSSEStream(c, stream, encodeStreamError(formatErr), keepAlive, heartbeatFormat)
+}
+
+func writeEncodedSSEStream(
+	c *gin.Context,
+	stream streams.Stream[*httpclient.StreamEvent],
+	encodeErr StreamErrorEncoder,
+	keepAlive SSEKeepAliveConfig,
+	heartbeatFormat sseHeartbeatFormat,
+) {
 	if !keepAlive.Enabled || keepAlive.Interval <= 0 || heartbeatFormat == sseHeartbeatNone {
-		writeSSEStreamWithoutHeartbeat(c, stream, formatErr)
+		writeSSEStreamWithoutHeartbeat(c, stream, encodeErr)
 		return
 	}
 
-	writeSSEStreamWithHeartbeat(c, stream, formatErr, keepAlive.Interval, heartbeatFormat)
+	writeEncodedSSEStreamWithHeartbeat(c, stream, encodeErr, keepAlive.Interval, heartbeatFormat)
 }
 
-func writeSSEStreamWithoutHeartbeat(c *gin.Context, stream streams.Stream[*httpclient.StreamEvent], formatErr StreamErrorFormatter) {
+func writeSSEStreamWithoutHeartbeat(c *gin.Context, stream streams.Stream[*httpclient.StreamEvent], formatErr StreamErrorEncoder) {
 	ctx := c.Request.Context()
 	clientDisconnected := false
 
-	if formatErr == nil {
-		formatErr = FormatStreamError
-	}
-
 	defer func() {
+		clearSSEWriteDeadline(ctx, c.Writer)
 		if clientDisconnected {
 			log.Warn(ctx, "Client disconnected")
 		}
@@ -185,7 +283,12 @@ func writeSSEStreamWithoutHeartbeat(c *gin.Context, stream streams.Stream[*httpc
 
 	// Set SSE headers
 	setSSEHeaders(c)
-	c.Writer.Flush()
+	if err := flushSSE(ctx, c.Writer); err != nil {
+		clientDisconnected = true
+		log.Warn(ctx, "Failed to flush SSE headers", log.Cause(err))
+
+		return
+	}
 
 	// Do not pre-check ctx.Done() before Next(). If the client disconnects right
 	// after receiving the terminal event, a preferential ctx.Done() check can abort
@@ -195,6 +298,7 @@ func writeSSEStreamWithoutHeartbeat(c *gin.Context, stream streams.Stream[*httpc
 	// its buffer is drained; eventsAfterCancel bounds streams that violate it.
 	eventsAfterCancel := 0
 	terminalSeen := false
+	terminalTracker := orchestrator.NewStreamTerminalTracker(streamExpectedChoices(stream))
 
 	for {
 		if !stream.Next() {
@@ -206,24 +310,39 @@ func writeSSEStreamWithoutHeartbeat(c *gin.Context, stream streams.Stream[*httpc
 		if ctx.Err() != nil {
 			eventsAfterCancel++
 			if eventsAfterCancel > maxStreamEventsAfterCancel {
-				clientDisconnected = true
-
 				log.Warn(ctx, "Stream still producing after cancellation, aborting drain",
 					log.Int("events_after_cancel", eventsAfterCancel))
+				writeSSEStreamEnd(c, ctx, ctx.Err(), formatErr, terminalSeen, &clientDisconnected)
 
 				return
 			}
 		}
 
 		cur := stream.Current()
-		if orchestrator.IsTerminalStreamEvent(cur) {
-			terminalSeen = true
-		}
+		if err := writeStreamDelivery(ctx, stream, func() (bool, error) {
+			if err := writeSSEEvent(ctx, c.Writer, cur.Type, cur.Data); err != nil {
+				return false, err
+			}
+			terminal := !terminalSeen && terminalTracker.Observe(cur)
+			if terminal {
+				terminalSeen = true
+			}
+			return terminal, nil
+		}); err != nil {
+			clientDisconnected = true
+			log.Warn(ctx, "Failed to write SSE event", log.Cause(err))
 
-		c.SSEvent(cur.Type, cur.Data)
+			return
+		}
 		log.Debug(ctx, "write stream event", log.Any("event", cur))
-		c.Writer.Flush()
 	}
+}
+
+func streamExpectedChoices(stream streams.Stream[*httpclient.StreamEvent]) int {
+	if s, ok := stream.(interface{ ExpectedStreamChoices() int }); ok {
+		return s.ExpectedStreamChoices()
+	}
+	return 0
 }
 
 func writeSSEStreamWithHeartbeat(
@@ -233,21 +352,33 @@ func writeSSEStreamWithHeartbeat(
 	interval time.Duration,
 	heartbeatFormat sseHeartbeatFormat,
 ) {
+	writeEncodedSSEStreamWithHeartbeat(c, stream, encodeStreamError(formatErr), interval, heartbeatFormat)
+}
+
+func writeEncodedSSEStreamWithHeartbeat(
+	c *gin.Context,
+	stream streams.Stream[*httpclient.StreamEvent],
+	formatErr StreamErrorEncoder,
+	interval time.Duration,
+	heartbeatFormat sseHeartbeatFormat,
+) {
 	ctx := c.Request.Context()
 	clientDisconnected := false
 
-	if formatErr == nil {
-		formatErr = FormatStreamError
-	}
-
 	defer func() {
+		clearSSEWriteDeadline(ctx, c.Writer)
 		if clientDisconnected {
 			log.Warn(ctx, "Client disconnected")
 		}
 	}()
 
 	setSSEHeaders(c)
-	c.Writer.Flush()
+	if err := flushSSE(ctx, c.Writer); err != nil {
+		clientDisconnected = true
+		log.Warn(ctx, "Failed to flush SSE headers", log.Cause(err))
+
+		return
+	}
 
 	reader := newSSEStreamReader(ctx, stream)
 	// The caller closes the stream after this function returns. Wait for the
@@ -261,12 +392,15 @@ func writeSSEStreamWithHeartbeat(
 	ctxDone := ctx.Done()
 	eventsAfterCancel := 0
 	terminalSeen := false
+	terminalTracker := orchestrator.NewStreamTerminalTracker(streamExpectedChoices(stream))
 	heartbeatCount := 0
 
 	for {
 		select {
 		case <-ctxDone:
-			clientDisconnected = true
+			if errors.Is(ctx.Err(), context.Canceled) {
+				clientDisconnected = true
+			}
 			ctxDone = nil
 			stopTimer(timer)
 			timerC = nil
@@ -280,28 +414,37 @@ func writeSSEStreamWithHeartbeat(
 			if ctx.Err() != nil {
 				eventsAfterCancel++
 				if eventsAfterCancel > maxStreamEventsAfterCancel {
-					clientDisconnected = true
 					log.Warn(ctx, "Stream still producing after cancellation, aborting drain",
 						log.Int("events_after_cancel", eventsAfterCancel))
+					writeSSEStreamEnd(c, ctx, ctx.Err(), formatErr, terminalSeen, &clientDisconnected)
 					return
 				}
 			}
 
 			cur := result.event
-			if orchestrator.IsTerminalStreamEvent(cur) {
-				terminalSeen = true
-			}
+			if err := writeStreamDelivery(ctx, stream, func() (bool, error) {
+				if err := writeSSEEvent(ctx, c.Writer, cur.Type, cur.Data); err != nil {
+					return false, err
+				}
+				terminal := !terminalSeen && terminalTracker.Observe(cur)
+				if terminal {
+					terminalSeen = true
+				}
+				return terminal, nil
+			}); err != nil {
+				clientDisconnected = true
+				log.Warn(ctx, "Failed to write SSE event", log.Cause(err))
 
-			c.SSEvent(cur.Type, cur.Data)
+				return
+			}
 			log.Debug(ctx, "write stream event", log.Any("event", cur))
-			c.Writer.Flush()
 
 			if timerC != nil {
 				resetTimer(timer, interval)
 			}
 
 		case <-timerC:
-			if err := writeSSEHeartbeat(c.Writer, heartbeatFormat); err != nil {
+			if err := writeSSEHeartbeatEvent(ctx, c.Writer, heartbeatFormat); err != nil {
 				clientDisconnected = true
 				log.Warn(ctx, "Failed to write SSE heartbeat", log.Cause(err))
 				return
@@ -314,7 +457,6 @@ func writeSSEStreamWithHeartbeat(
 				log.Duration("interval", interval),
 			)
 
-			c.Writer.Flush()
 			timer.Reset(interval)
 		}
 	}
@@ -333,11 +475,23 @@ func writeSSEStreamEnd(
 	c *gin.Context,
 	ctx context.Context,
 	streamErr error,
-	formatErr StreamErrorFormatter,
+	formatErr StreamErrorEncoder,
 	terminalSeen bool,
 	clientDisconnected *bool,
 ) {
 	switch {
+	case terminalSeen:
+		if streamErr != nil && !errors.Is(streamErr, context.Canceled) {
+			log.Warn(ctx, "Stream error after terminal event was delivered, suppressing trailing error event", log.Cause(streamErr))
+		}
+	case errors.Is(ctx.Err(), context.DeadlineExceeded) &&
+		(streamErr == nil || errors.Is(streamErr, context.Canceled) || errors.Is(streamErr, context.DeadlineExceeded)):
+		streamErr = ctx.Err()
+		log.Error(ctx, "Stream deadline exceeded", log.Cause(streamErr))
+		if err := writeSSEErrorEvent(ctx, c.Writer, formatErr, streamErr); err != nil {
+			*clientDisconnected = true
+			log.Warn(ctx, "Failed to write SSE deadline error", log.Cause(err))
+		}
 	case streamErr != nil:
 		if errors.Is(streamErr, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 			*clientDisconnected = true
@@ -347,17 +501,141 @@ func writeSSEStreamEnd(
 			}
 		} else {
 			log.Error(ctx, "Error in stream", log.Cause(streamErr))
-			c.SSEvent("error", formatErr(ctx, streamErr))
+			if err := writeSSEErrorEvent(ctx, c.Writer, formatErr, streamErr); err != nil {
+				*clientDisconnected = true
+				log.Warn(ctx, "Failed to write SSE stream error", log.Cause(err))
+			}
 		}
 	case errors.Is(ctx.Err(), context.Canceled):
 		*clientDisconnected = true
 	case !terminalSeen:
 		log.Error(ctx, "Stream ended without terminal event, reporting incomplete stream to client",
 			log.Cause(orchestrator.ErrStreamIncomplete))
-		c.SSEvent("error", formatErr(ctx, orchestrator.ErrStreamIncomplete))
+		if err := writeSSEErrorEvent(ctx, c.Writer, formatErr, orchestrator.ErrStreamIncomplete); err != nil {
+			*clientDisconnected = true
+			log.Warn(ctx, "Failed to write incomplete SSE stream error", log.Cause(err))
+		}
+	}
+}
+
+func writeSSEErrorEvent(ctx context.Context, writer http.ResponseWriter, encodeErr StreamErrorEncoder, err error) error {
+	event, encodeError := encodeErr(ctx, orchestrator.ClassifyUpstreamTransportError(err))
+	if encodeError != nil {
+		return encodeError
+	}
+	return writeSSEEvent(ctx, writer, event.Type, event.Data)
+}
+
+func writeSSEEvent(ctx context.Context, writer http.ResponseWriter, event string, data any) error {
+	return writeAndFlushSSE(ctx, writer, func(writer io.Writer) error {
+		return sse.Encode(writer, sse.Event{Event: event, Data: data})
+	})
+}
+
+type sseErrorWriter struct {
+	writer io.Writer
+	err    error
+}
+
+func (w *sseErrorWriter) Write(data []byte) (int, error) {
+	if w.err != nil {
+		return 0, w.err
 	}
 
-	c.Writer.Flush()
+	n, err := w.writer.Write(data)
+	if err == nil && n != len(data) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
+		w.err = err
+	}
+
+	return n, err
+}
+
+func (w *sseErrorWriter) WriteString(data string) (int, error) {
+	if w.err != nil {
+		return 0, w.err
+	}
+
+	n, err := io.WriteString(w.writer, data)
+	if err == nil && n != len(data) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
+		w.err = err
+	}
+
+	return n, err
+}
+
+func writeSSEHeartbeatEvent(ctx context.Context, writer http.ResponseWriter, format sseHeartbeatFormat) error {
+	return writeAndFlushSSE(ctx, writer, func(writer io.Writer) error {
+		return writeSSEHeartbeat(writer, format)
+	})
+}
+
+func flushSSE(ctx context.Context, writer http.ResponseWriter) error {
+	return writeAndFlushSSE(ctx, writer, nil)
+}
+
+func writeAndFlushSSE(ctx context.Context, writer http.ResponseWriter, write func(io.Writer) error) error {
+	refreshSSEWriteDeadline(ctx, writer)
+	defer clearSSEWriteDeadline(ctx, writer)
+
+	if write != nil {
+		errorWriter := &sseErrorWriter{writer: writer}
+		if err := write(errorWriter); err != nil {
+			return err
+		}
+		if errorWriter.err != nil {
+			return errorWriter.err
+		}
+	}
+
+	return flushResponseWriter(writer)
+}
+
+type responseWriterFlushError interface {
+	FlushError() error
+}
+
+type responseWriterUnwrapper interface {
+	Unwrap() http.ResponseWriter
+}
+
+func flushResponseWriter(writer http.ResponseWriter) error {
+	if headerWriter, ok := writer.(interface{ WriteHeaderNow() }); ok {
+		headerWriter.WriteHeaderNow()
+	}
+	if flusher, ok := writer.(responseWriterFlushError); ok {
+		return flusher.FlushError()
+	}
+	if unwrapper, ok := writer.(responseWriterUnwrapper); ok {
+		return flushResponseWriter(unwrapper.Unwrap())
+	}
+	if flusher, ok := writer.(http.Flusher); ok {
+		flusher.Flush()
+
+		return nil
+	}
+
+	return http.ErrNotSupported
+}
+
+func refreshSSEWriteDeadline(ctx context.Context, writer http.ResponseWriter) {
+	setSSEWriteDeadline(ctx, writer, time.Now().Add(sseWriteTimeout))
+}
+
+func clearSSEWriteDeadline(ctx context.Context, writer http.ResponseWriter) {
+	setSSEWriteDeadline(ctx, writer, time.Time{})
+}
+
+func setSSEWriteDeadline(ctx context.Context, writer http.ResponseWriter, deadline time.Time) {
+	err := http.NewResponseController(writer).SetWriteDeadline(deadline)
+	if err != nil && !errors.Is(err, http.ErrNotSupported) {
+		log.Warn(ctx, "Failed to set SSE write deadline", log.Cause(err))
+	}
 }
 
 func stopTimer(timer *time.Timer) {
@@ -426,6 +704,7 @@ func WriteBinaryStream(c *gin.Context, stream streams.Stream[*httpclient.StreamE
 	// disconnect right after the terminal chunk does not skip drain / completion.
 	// The drain after cancellation is bounded by eventsAfterCancel.
 	eventsAfterCancel := 0
+	terminalDelivered := false
 
 	for {
 		if !stream.Next() {
@@ -440,7 +719,9 @@ func WriteBinaryStream(c *gin.Context, stream streams.Stream[*httpclient.StreamE
 				} else {
 					log.Error(ctx, "Error in binary stream", log.Cause(err))
 					if !headersWritten {
-						c.JSON(streamErrorStatus(err), FormatStreamError(ctx, err))
+						failure := orchestrator.ClassifyUpstreamTransportError(err)
+						c.JSON(streamErrorStatus(failure), FormatStreamError(ctx, failure))
+
 						return
 					}
 				}
@@ -448,7 +729,12 @@ func WriteBinaryStream(c *gin.Context, stream streams.Stream[*httpclient.StreamE
 				clientDisconnected = true
 			}
 
-			c.Writer.Flush()
+			if err := writeStreamDelivery(ctx, stream, func() (bool, error) {
+				return terminalDelivered, flushResponseWriter(c.Writer)
+			}); err != nil {
+				clientDisconnected = true
+				log.Warn(ctx, "Failed to flush binary stream", log.Cause(err))
+			}
 
 			return
 		}
@@ -467,6 +753,7 @@ func WriteBinaryStream(c *gin.Context, stream streams.Stream[*httpclient.StreamE
 
 		cur := stream.Current()
 		if cur != nil && cur.Type == httpclient.BinaryStreamDoneEventType {
+			terminalDelivered = true
 			continue
 		}
 
@@ -486,14 +773,24 @@ func WriteBinaryStream(c *gin.Context, stream streams.Stream[*httpclient.StreamE
 			headersWritten = true
 		}
 
-		if _, err := c.Writer.Write(cur.Data); err != nil {
+		if n, err := c.Writer.Write(cur.Data); err != nil {
 			clientDisconnected = true
 			log.Warn(ctx, "Failed to write binary stream chunk", log.Cause(err))
 
 			return
+		} else if n != len(cur.Data) {
+			clientDisconnected = true
+			log.Warn(ctx, "Failed to write binary stream chunk", log.Cause(io.ErrShortWrite))
+
+			return
 		}
 
-		c.Writer.Flush()
+		if err := flushResponseWriter(c.Writer); err != nil {
+			clientDisconnected = true
+			log.Warn(ctx, "Failed to flush binary stream", log.Cause(err))
+
+			return
+		}
 	}
 }
 
@@ -517,7 +814,9 @@ func streamErrorStatus(err error) int {
 }
 
 // FormatStreamError formats a stream error into an OpenAI-compatible JSON error object.
-func FormatStreamError(_ context.Context, err error) any {
+// When the error carries no upstream request id, the gateway's own request id from ctx
+// is used so clients can always correlate an error event with the request log.
+func FormatStreamError(ctx context.Context, err error) any {
 	errType := "server_error"
 	errCode := ""
 	requestID := ""
@@ -548,7 +847,7 @@ func FormatStreamError(_ context.Context, err error) any {
 				"type":    errType,
 				"code":    errCode,
 			},
-			"request_id": requestID,
+			"request_id": streamErrorRequestID(ctx, requestID),
 		}
 	}
 
@@ -573,8 +872,22 @@ func FormatStreamError(_ context.Context, err error) any {
 			"type":    errType,
 			"code":    errCode,
 		},
-		"request_id": requestID,
+		"request_id": streamErrorRequestID(ctx, requestID),
 	}
+}
+
+// streamErrorRequestID returns the upstream request id when present, otherwise the
+// gateway request id stored in ctx (the value echoed in the AH-Request-Id header).
+func streamErrorRequestID(ctx context.Context, requestID string) string {
+	if requestID != "" || ctx == nil {
+		return requestID
+	}
+
+	if id, ok := contexts.GetRequestID(ctx); ok {
+		return id
+	}
+
+	return ""
 }
 
 func wrapQuotaExhaustedAsResponseError(err error) error {

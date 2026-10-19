@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { z } from 'zod';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { graphqlRequest } from '@/gql/graphql';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -19,6 +20,7 @@ import type {
 } from './schema';
 import {
   apiKeyConnectionSchema,
+  apiKeyStatusSchema,
   apiKeyProfileQuotaUsageSchema,
   apiKeyProfileTemplateSchema,
   apiKeySchema,
@@ -417,7 +419,114 @@ const LOAD_APIKEY_PROFILE_TEMPLATE_MUTATION = `
   }
 `;
 
+const API_KEY_OPTIONS_QUERY = `
+  query GetAPIKeyOptions($first: Int!, $after: Cursor, $orderBy: APIKeyOrder, $where: APIKeyWhereInput) {
+    apiKeys(first: $first, after: $after, orderBy: $orderBy, where: $where) {
+      edges {
+        node {
+          id
+          name
+          status
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+`;
+
+const apiKeyOptionConnectionSchema = z.object({
+  edges: z.array(
+    z.object({
+      node: z.object({
+        id: z.string(),
+        name: z.string(),
+        status: apiKeyStatusSchema,
+      }),
+    })
+  ),
+  pageInfo: z.object({
+    hasNextPage: z.boolean(),
+    endCursor: z.string().optional().nullable(),
+  }),
+});
+
+async function fetchAPIKeyOptions(
+  selectedProjectId: string | null | undefined,
+  variables: { first: number; after?: string; where: Record<string, unknown> }
+) {
+  const headers = selectedProjectId ? { 'X-Project-ID': selectedProjectId } : undefined;
+  const data = await graphqlRequest<{ apiKeys: unknown }>(
+    API_KEY_OPTIONS_QUERY,
+    {
+      ...variables,
+      orderBy: { field: 'CREATED_AT', direction: 'DESC' },
+    },
+    headers
+  );
+  return apiKeyOptionConnectionSchema.parse(data?.apiKeys);
+}
+
 // React Query hooks
+export function useApiKeyOptions(options?: { search?: string; includeArchived?: boolean; enabled?: boolean }) {
+  const { t } = useTranslation();
+  const { handleError } = useErrorHandler();
+  const selectedProjectId = useSelectedProjectId();
+  const search = options?.search?.trim();
+  const includeArchived = options?.includeArchived ?? false;
+
+  return useInfiniteQuery({
+    queryKey: ['apiKeys', 'options', selectedProjectId, includeArchived, search],
+    queryFn: async ({ pageParam }) => {
+      try {
+        return await fetchAPIKeyOptions(selectedProjectId, {
+          first: 100,
+          after: pageParam,
+          where: {
+            typeNotIn: [NOAUTH_API_KEY_TYPE],
+            statusIn: includeArchived ? ['enabled', 'disabled', 'archived'] : ['enabled', 'disabled'],
+            ...(search ? { nameContainsFold: search } : {}),
+          },
+        });
+      } catch (error) {
+        handleError(error, t('common.errors.internalServerError'));
+        throw error;
+      }
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => (lastPage.pageInfo.hasNextPage ? (lastPage.pageInfo.endCursor ?? undefined) : undefined),
+    enabled: options?.enabled !== false && !!selectedProjectId,
+  });
+}
+
+export function useApiKeyOptionsByIDs(ids: string[] | undefined, options?: { enabled?: boolean }) {
+  const { t } = useTranslation();
+  const { handleError } = useErrorHandler();
+  const selectedProjectId = useSelectedProjectId();
+
+  return useQuery({
+    queryKey: ['apiKeys', 'options', 'selected', selectedProjectId, ids],
+    queryFn: async () => {
+      try {
+        return await fetchAPIKeyOptions(selectedProjectId, {
+          first: Math.min(ids?.length ?? 1, 1000),
+          where: {
+            typeNotIn: [NOAUTH_API_KEY_TYPE],
+            statusIn: ['enabled', 'disabled', 'archived'],
+            idIn: ids,
+          },
+        });
+      } catch (error) {
+        handleError(error, t('common.errors.internalServerError'));
+        throw error;
+      }
+    },
+    enabled: options?.enabled !== false && !!selectedProjectId && !!ids?.length,
+  });
+}
+
 export function useApiKeys(
   variables?: {
     first?: number;
@@ -611,6 +720,7 @@ export function useUpdateApiKeyStatus() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const selectedProjectId = useSelectedProjectId();
+  const { handleError } = useErrorHandler();
 
   return useMutation({
     mutationFn: ({ id, status }: { id: string; status: 'enabled' | 'disabled' | 'archived' }) => {
@@ -628,8 +738,8 @@ export function useUpdateApiKeyStatus() {
             : t('apikeys.status.archived');
       toast.success(t('apikeys.messages.statusUpdateSuccess', { status: statusText }));
     },
-    onError: () => {
-      toast.error(t('common.errors.internalServerError'));
+    onError: (error) => {
+      handleError(error);
     },
   });
 }
@@ -638,6 +748,7 @@ export function useUpdateApiKeyProfiles() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const selectedProjectId = useSelectedProjectId();
+  const { handleError } = useErrorHandler();
 
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateApiKeyProfilesInput }) => {
@@ -649,8 +760,8 @@ export function useUpdateApiKeyProfiles() {
       queryClient.invalidateQueries({ queryKey: ['apiKey', variables.id] });
       toast.success(t('apikeys.messages.profilesUpdateSuccess'));
     },
-    onError: () => {
-      toast.error(t('common.errors.internalServerError'));
+    onError: (error) => {
+      handleError(error);
     },
   });
 }
@@ -659,6 +770,7 @@ export function useBulkDisableApiKeys() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const selectedProjectId = useSelectedProjectId();
+  const { handleError } = useErrorHandler();
 
   return useMutation({
     mutationFn: async (ids: string[]) => {
@@ -670,8 +782,8 @@ export function useBulkDisableApiKeys() {
       queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
       toast.success(t('apikeys.messages.bulkDisableSuccess', { count: variables.length }));
     },
-    onError: () => {
-      toast.error(t('common.errors.internalServerError'));
+    onError: (error) => {
+      handleError(error);
     },
   });
 }
@@ -680,6 +792,7 @@ export function useBulkEnableApiKeys() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const selectedProjectId = useSelectedProjectId();
+  const { handleError } = useErrorHandler();
 
   return useMutation({
     mutationFn: async (ids: string[]) => {
@@ -691,8 +804,8 @@ export function useBulkEnableApiKeys() {
       queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
       toast.success(t('apikeys.messages.bulkEnableSuccess', { count: variables.length }));
     },
-    onError: () => {
-      toast.error(t('common.errors.internalServerError'));
+    onError: (error) => {
+      handleError(error);
     },
   });
 }
@@ -701,6 +814,7 @@ export function useBulkArchiveApiKeys() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const selectedProjectId = useSelectedProjectId();
+  const { handleError } = useErrorHandler();
 
   return useMutation({
     mutationFn: async (ids: string[]) => {
@@ -712,8 +826,8 @@ export function useBulkArchiveApiKeys() {
       queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
       toast.success(t('apikeys.messages.bulkArchiveSuccess', { count: variables.length }));
     },
-    onError: () => {
-      toast.error(t('common.errors.internalServerError'));
+    onError: (error) => {
+      handleError(error);
     },
   });
 }

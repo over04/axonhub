@@ -1,6 +1,11 @@
 package openai
 
-import "github.com/looplj/axonhub/llm"
+import (
+	"encoding/json"
+
+	"github.com/looplj/axonhub/llm"
+	"github.com/looplj/axonhub/llm/internal/pkg/xjson"
+)
 
 // PromptTokensDetails Breakdown of tokens used in the prompt.
 type PromptTokensDetails struct {
@@ -36,6 +41,30 @@ type Usage struct {
 
 	// CachedTokens is the number of tokens that were cached for Moonshot.
 	CachedTokens int64 `json:"cached_tokens,omitempty"`
+
+	// Cost is the request cost calculated by AxonHub from channel model prices.
+	// Omitted when no matching price is configured.
+	Cost *float64 `json:"cost,omitempty"`
+}
+
+func (u *Usage) UnmarshalJSON(data []byte) error {
+	type usageAlias Usage
+
+	decoded := struct {
+		*usageAlias
+
+		Cost json.RawMessage `json:"cost"`
+	}{
+		usageAlias: (*usageAlias)(u),
+	}
+
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+
+	u.Cost = xjson.ParseOptionalFloat64(decoded.Cost)
+
+	return nil
 }
 
 func (u *Usage) ToLLMUsage() *llm.Usage {
@@ -97,6 +126,7 @@ func UsageFromLLM(u *llm.Usage) *Usage {
 		PromptTokens:     u.PromptTokens,
 		CompletionTokens: u.CompletionTokens,
 		TotalTokens:      u.TotalTokens,
+		Cost:             u.Cost,
 	}
 
 	if u.PromptTokensDetails != nil {

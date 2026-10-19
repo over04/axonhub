@@ -195,6 +195,34 @@ func TestOutboundTransformer_TransformRequest_OmitsMetadataWhenEmpty(t *testing.
 	require.Nil(t, hreq.Metadata)
 }
 
+func TestOutboundTransformer_TransformRequest_PreservesClientMetadata(t *testing.T) {
+	inboundRequest := &httpclient.Request{
+		Headers: http.Header{"Content-Type": []string{"application/json"}},
+		Body: []byte(`{
+			"model":"gpt-5",
+			"input":"hello",
+			"stream":true,
+			"client_metadata":{"x-codex-turn-state":"ts-1","custom":"kept"}
+		}`),
+	}
+
+	llmRequest, err := NewInboundTransformer().TransformRequest(t.Context(), inboundRequest)
+	require.NoError(t, err)
+	llmRequest.RawRequest = inboundRequest
+
+	outbound, err := NewOutboundTransformer("https://api.openai.com", "test-api-key")
+	require.NoError(t, err)
+	outboundRequest, err := outbound.TransformRequest(t.Context(), llmRequest)
+	require.NoError(t, err)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(outboundRequest.Body, &body))
+	metadata, ok := body["client_metadata"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "ts-1", metadata["x-codex-turn-state"])
+	require.Equal(t, "kept", metadata["custom"])
+}
+
 func TestOutboundTransformer_TransformRequest_WebSearchRequiredToolChoice(t *testing.T) {
 	transformer, err := NewOutboundTransformer("https://api.openai.com", "test-api-key")
 	require.NoError(t, err)
@@ -258,6 +286,24 @@ func TestOutboundTransformer_TransformRequest_ImageGenerationToolChoice(t *testi
 	require.NotContains(t, payload["tool_choice"].(map[string]any), "name")
 	require.Equal(t, "image_generation", payload["tools"].([]any)[0].(map[string]any)["type"])
 	require.Equal(t, "gpt-image-2", payload["tools"].([]any)[0].(map[string]any)["model"])
+}
+
+func TestResponsesImageWithoutNativeEndpointReturnsConfigurationError(t *testing.T) {
+	// Given: an Images request sent to the generic Responses outbound.
+	responsesOutbound, err := NewOutboundTransformer("https://api.openai.com", "test-api-key")
+	require.NoError(t, err)
+
+	// When: the outbound transformer is asked to build a provider request.
+	_, err = responsesOutbound.TransformRequest(context.Background(), &llm.Request{
+		Model:       "gpt-image-2",
+		RequestType: llm.RequestTypeImage,
+		APIFormat:   llm.APIFormatOpenAIImageGeneration,
+		Image:       &llm.ImageRequest{Prompt: "draw a square"},
+	})
+
+	// Then: Images must be routed to an explicit native Images endpoint.
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "native Images endpoint")
 }
 
 func TestOutboundTransformer_TransformRequest_ReplaysProviderRawToolsAndToolChoice(t *testing.T) {
@@ -1413,57 +1459,6 @@ func TestOutboundTransformer_TransformResponse(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestOutboundTransformer_TransformImageEditResponse(t *testing.T) {
-	transformer, err := NewOutboundTransformer("https://api.openai.com", "test-api-key")
-	require.NoError(t, err)
-
-	httpReq, err := transformer.TransformRequest(t.Context(), &llm.Request{
-		Model:       "gpt-image-1",
-		RequestType: llm.RequestTypeImage,
-		APIFormat:   llm.APIFormatOpenAIImageEdit,
-		Image: &llm.ImageRequest{
-			Prompt:       "edit this image",
-			Images:       [][]byte{[]byte("source-image")},
-			OutputFormat: "webp",
-			Quality:      "high",
-			Size:         "1024x1024",
-		},
-	})
-	require.NoError(t, err)
-	require.Equal(t, llm.RequestTypeImage.String(), httpReq.RequestType)
-	require.Equal(t, llm.APIFormatOpenAIResponse.String(), httpReq.APIFormat)
-
-	result, err := transformer.TransformResponse(t.Context(), &httpclient.Response{
-		StatusCode: http.StatusOK,
-		Request:    httpReq,
-		Body: []byte(`{
-			"id": "resp_image_123",
-			"object": "response",
-			"created_at": 1759161016,
-			"status": "completed",
-			"model": "gpt-image-1",
-			"output": [
-				{
-					"id": "img_123",
-					"type": "image_generation_call",
-					"status": "completed",
-					"result": "data:image/webp;base64,aW1hZ2UtZGF0YQ=="
-				}
-			]
-		}`),
-	})
-	require.NoError(t, err)
-	require.Equal(t, "image.generation", result.Object)
-	require.Equal(t, llm.RequestTypeImage, result.RequestType)
-	require.Equal(t, "gpt-image-1", result.Model)
-	require.NotNil(t, result.Image)
-	require.Equal(t, "webp", result.Image.OutputFormat)
-	require.Equal(t, "high", result.Image.Quality)
-	require.Equal(t, "1024x1024", result.Image.Size)
-	require.Len(t, result.Image.Data, 1)
-	require.Equal(t, "aW1hZ2UtZGF0YQ==", result.Image.Data[0].B64JSON)
 }
 
 func TestOutboundTransformer_TransformRequest_WithTestData(t *testing.T) {

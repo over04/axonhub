@@ -27,17 +27,18 @@ func init() {
 type PlatformType string
 
 const (
-	PlatformDirect     PlatformType = "direct"     // Direct Anthropic API
-	PlatformBedrock    PlatformType = "bedrock"    // AWS Bedrock
-	PlatformVertex     PlatformType = "vertex"     // Google Vertex AI
-	PlatformDeepSeek   PlatformType = "deepseek"   // DeepSeek with Anthropic format
-	PlatformDoubao     PlatformType = "doubao"     // Doubao with Anthropic format
-	PlatformMoonshot   PlatformType = "moonshot"   // Moonshot with Anthropic format
-	PlatformZhipu      PlatformType = "zhipu"      // Zhipu with Anthropic format
-	PlatformZai        PlatformType = "zai"        // Zai with Anthropic format
-	PlatformLongCat    PlatformType = "longcat"    // LongCat with Anthropic format (Bearer auth)
-	PlatformClaudeCode PlatformType = "claudecode" // Claude Code CLI
-	PlatformOllama     PlatformType = "ollama"     // Ollama with Anthropic format (Bearer auth)
+	PlatformDirect      PlatformType = "direct"      // Direct Anthropic API
+	PlatformBedrock     PlatformType = "bedrock"     // AWS Bedrock
+	PlatformVertex      PlatformType = "vertex"      // Google Vertex AI
+	PlatformDeepSeek    PlatformType = "deepseek"    // DeepSeek with Anthropic format
+	PlatformDoubao      PlatformType = "doubao"      // Doubao with Anthropic format
+	PlatformMoonshot    PlatformType = "moonshot"    // Moonshot with Anthropic format
+	PlatformZhipu       PlatformType = "zhipu"       // Zhipu with Anthropic format
+	PlatformZai         PlatformType = "zai"         // Zai with Anthropic format
+	PlatformLongCat     PlatformType = "longcat"     // LongCat with Anthropic format (Bearer auth)
+	PlatformClaudeCode  PlatformType = "claudecode"  // Claude Code CLI
+	PlatformOllama      PlatformType = "ollama"      // Ollama with Anthropic format (Bearer auth)
+	PlatformCommandCode PlatformType = "commandcode" // Command Code provider (Bearer auth)
 )
 
 // Config holds all configuration for the Anthropic outbound transformer.
@@ -162,8 +163,28 @@ func (t *OutboundTransformer) TransformRequest(
 		return nil, fmt.Errorf("%w: max_tokens must be positive", transformer.ErrInvalidRequest)
 	}
 
+	if err := validateUnsupportedContentParts(llmReq.Messages); err != nil {
+		return nil, err
+	}
+
+	// Content parts without an Anthropic equivalent are dropped during the
+	// conversion below. Reject a message left without any content instead of
+	// forwarding "content": null, which Anthropic rejects with an error that
+	// never names the unsupported part.
+	if err := validateDroppedContentParts(llmReq.Messages); err != nil {
+		return nil, err
+	}
+
 	// Convert to Anthropic request format
 	anthropicReq := convertToAnthropicRequestWithConfig(llmReq, t.config)
+
+	// System and developer messages are extracted into the top-level system
+	// prompt. When the request carries nothing else there is no conversation
+	// turn left, and Anthropic rejects the empty messages array with an error
+	// that does not mention the developer role. Fail here with a clear reason.
+	if len(anthropicReq.Messages) == 0 {
+		return nil, fmt.Errorf("%w: messages must contain at least one user or assistant message; system and developer messages are converted to the system prompt", transformer.ErrInvalidRequest)
+	}
 
 	// Anthropic supports two prompt-caching modes (see
 	// https://docs.claude.com/en/docs/build-with-claude/prompt-caching):
@@ -172,8 +193,23 @@ func (t *OutboundTransformer) TransformRequest(
 	//      and intentionally skip our own breakpoint optimization pipeline.
 	//   2. Explicit cache breakpoints: per-block cache_control fields. We run
 	//      our optimization pipeline only in this mode.
-	if anthropicReq.CacheControl == nil && countCacheControls(anthropicReq) > 0 {
-		optimizeCacheControl(anthropicReq)
+	//   3. Converted requests without cache metadata: opt into Anthropic's
+	//      automatic caching because non-Anthropic protocols have no equivalent
+	//      cache-control field to carry through the unified request.
+	if anthropicReq.CacheControl == nil {
+		if countCacheControls(anthropicReq) > 0 {
+			optimizeCacheControl(anthropicReq)
+		} else if shouldEnableAutomaticCacheControl(llmReq) {
+			anthropicReq.CacheControl = &CacheControl{Type: "ephemeral"}
+		}
+	}
+
+	//nolint:exhaustive // Checked.
+	switch t.config.Type {
+	case PlatformVertex, PlatformBedrock:
+		if !moveTopLevelCacheControlToLastBlock(anthropicReq) {
+			return nil, fmt.Errorf("%w: cannot safely place top-level cache control on managed Anthropic platform", transformer.ErrInvalidRequest)
+		}
 	}
 
 	// Determine endpoint based on platform
@@ -227,7 +263,7 @@ func (t *OutboundTransformer) TransformRequest(
 
 	if apiKey != "" {
 		// LongCat and Ollama use Bearer token authentication instead of X-API-Key
-		if t.config.Type == PlatformLongCat || t.config.Type == PlatformOllama || t.config.Type == PlatformBedrock {
+		if t.config.Type == PlatformLongCat || t.config.Type == PlatformOllama || t.config.Type == PlatformBedrock || t.config.Type == PlatformCommandCode {
 			authConfig = &httpclient.AuthConfig{
 				Type:   httpclient.AuthTypeBearer,
 				APIKey: apiKey,
@@ -250,6 +286,14 @@ func (t *OutboundTransformer) TransformRequest(
 		APIFormat: string(llm.APIFormatAnthropicMessage),
 		Metadata:  nil,
 	}, nil
+}
+
+func shouldEnableAutomaticCacheControl(req *llm.Request) bool {
+	if req == nil {
+		return false
+	}
+
+	return req.APIFormat != "" && req.APIFormat != llm.APIFormatAnthropicMessage
 }
 
 // buildFullRequestURL constructs the appropriate URL based on the platform.

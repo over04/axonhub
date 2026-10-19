@@ -105,7 +105,7 @@ func (t *OutboundTransformer) TransformRequest(
 		return nil, fmt.Errorf("%w: messages are required", transformer.ErrInvalidRequest)
 	}
 
-	body, err := json.Marshal(openai.RequestFromLLM(llmReq, openai.ReasoningFieldReasoning))
+	body, err := json.Marshal(openai.RequestFromLLM(ctx, llmReq, openai.ReasoningFieldReasoning))
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to transform request: %w", transformer.ErrInvalidRequest, err)
 	}
@@ -147,6 +147,9 @@ func (t *OutboundTransformer) buildImageGenerationRequest(ctx context.Context, l
 
 	if llmReq.Image == nil {
 		return nil, fmt.Errorf("%w: image request is required", transformer.ErrInvalidRequest)
+	}
+	if err := transformer.ValidateImageBytes(llmReq.Image); err != nil {
+		return nil, err
 	}
 
 	if llmReq.Image.Prompt == "" {

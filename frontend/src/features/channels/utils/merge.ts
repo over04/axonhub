@@ -28,66 +28,8 @@ export function mergeChannelSettingsForUpdate(
     streamInterruption: pick('streamInterruption', existing?.streamInterruption ?? null),
     retryableStatusCodes: pick('retryableStatusCodes', existing?.retryableStatusCodes ?? []),
     retryableErrorPatterns: pick('retryableErrorPatterns', existing?.retryableErrorPatterns ?? []),
+    modelProtocols: pick('modelProtocols', existing?.modelProtocols ?? []),
+    providerQuota: pick('providerQuota', existing?.providerQuota ?? null),
+    quotaRoutingMode: pick('quotaRoutingMode', existing?.quotaRoutingMode ?? undefined),
   };
-}
-
-/**
- * Deep merges two JSON object strings.
- * - Both inputs must be JSON objects
- * - Nested objects are merged recursively
- * - Scalars and arrays are overwritten by template
- */
-export function mergeOverrideParameters(existing: string, template: string): string {
-  try {
-    const existingObj = parseJSONObject(existing);
-    const templateObj = parseJSONObject(template);
-
-    const merged = deepMergeObjects(existingObj, templateObj);
-
-    // Use compact format to match backend
-    return JSON.stringify(merged);
-  } catch {
-    // If parsing fails, return template
-    return template;
-  }
-}
-
-function parseJSONObject(input: string): Record<string, any> {
-  const trimmed = input.trim();
-  if (!trimmed) {
-    return {};
-  }
-
-  const parsed = JSON.parse(trimmed);
-
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error('Input must be a JSON object');
-  }
-
-  return parsed;
-}
-
-function deepMergeObjects(base: Record<string, any>, override: Record<string, any>): Record<string, any> {
-  const result: Record<string, any> = { ...base };
-
-  for (const [key, overrideVal] of Object.entries(override)) {
-    const baseVal = result[key];
-
-    // If both values are objects (and not arrays), merge recursively
-    if (
-      baseVal &&
-      typeof baseVal === 'object' &&
-      !Array.isArray(baseVal) &&
-      overrideVal &&
-      typeof overrideVal === 'object' &&
-      !Array.isArray(overrideVal)
-    ) {
-      result[key] = deepMergeObjects(baseVal, overrideVal);
-    } else {
-      // Otherwise, override with template value
-      result[key] = overrideVal;
-    }
-  }
-
-  return result;
 }

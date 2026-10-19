@@ -208,6 +208,129 @@ https://custom-gateway.example.com/api##
 # 实际请求: /api（不会加版本号和端点路径）
 ```
 
+## 多协议端点与模型协议覆盖
+
+一个渠道可以同时配置多个出站端点（Endpoint），覆盖 chat、responses、messages 等协议，使不同客户端以原生协议直连。
+
+### 端点配置
+
+在渠道的 **端点** 对话框中管理：
+
+- 每个 endpoint 由 `api_format`、可选 `base_url`（留空继承渠道 Base URL）和可选 `path`（替换该协议的默认路径，配置后跳过版本号追加）组成。
+- 各渠道类型自带默认端点（如智谱提供 `openai/chat_completions`、`zhipu_anthropic` 提供 `anthropic/messages`），自定义端点可补充其他格式或覆盖同名格式。
+
+### 端点自动探测
+
+**端点** 对话框可以探测上游是否支持三种透传协议（`openai/chat_completions`、`openai/responses`、`anthropic/messages`）；若渠道三者都支持，基本可以让所有客户端协议原生透传。
+
+- 在 **当前端点** 区域点击 **自动探测**，后端会用渠道的 Base URL、凭证和默认测试模型，对每种协议发送一次轻量探测请求。
+- 探测到支持的协议会自动加入自定义端点列表（不会自动保存，确认后点击 **保存** 生效）。
+- 上游返回非 `404`/`405` 即视为该路由存在；`401`/`403` 归类为鉴权失败，`5xx` 或连接失败归类为错误。
+- 渠道列表的 **端点** 列用四个图标展示已配置的透传协议（包括原生 Gemini Contents 端点）：已配置高亮，未配置置灰。
+
+### 模型协议覆盖（ModelProtocols）
+
+在 **模型协议覆盖** 区块为单个模型强制可用的出站协议：
+
+```json
+{ "model": "glm-5.3-flash", "apiFormats": ["openai/responses", "openai/chat_completions"], "enabled": true }
+```
+
+- `apiFormats` 按配置顺序表达优先级；客户端入站协议在列表中时优先直连，否则使用列表中的第一个协议并经统一转换管线转换。
+- 启用的覆盖只能引用渠道已具备的 `api_format`（默认端点或自定义端点），保存时校验；模型被移出渠道支持列表时自动清理对应覆盖。
+- 端点与协议覆盖在同一次保存中原子提交。
+
+### Responses HTTP 与 WebSocket 端点
+
+Responses 有两种独立的端点格式：
+
+| `api_format` | 传输方式 | 默认请求路径 |
+|---|---|---|
+| `openai/responses` | HTTP | `/v1/responses` |
+| `openai/responses-ws` | WebSocket | `/v1/responses` |
+
+当一个渠道同时支持两种传输方式时，请在同一渠道中配置这两种格式。
+端点格式是出站传输方式的唯一依据。旧配置中的 WebSocket scheme 会归一化为
+`openai/responses-ws`；旧的 HTTP Responses 端点仍归一化为
+`openai/responses`。已经明确配置为仅 HTTP 或仅 WebSocket 的端点集合，在使用新配置
+保存前仍保持单模式。
+
+对于入站格式与所选渠道中允许的端点格式相同的请求，AxonHub 会先选择完全匹配的
+格式。如果没有同格式端点，则按配置顺序选择第一个允许的端点，并在 HTTP 与
+WebSocket 之间转换 Responses 请求、响应或事件封装。此回退不会改变渠道排序，也不会
+把 Images 或 Models 请求变成 Responses 请求。
+
+模型协议覆盖应列出模型可以使用的确切格式：
+
+```json
+{
+  "model": "gpt-5",
+  "apiFormats": ["openai/responses", "openai/responses-ws"],
+  "enabled": true
+}
+```
+
+覆盖只能引用该渠道已经提供的端点格式。Responses 连续对话应尽量保持在同一渠道。
+如果切换传输方式或渠道时无法确认此前的完整输入，AxonHub 会在发送上游请求前拒绝，
+不会带着不完整历史继续请求。
+
+### Responses 连续对话与有界恢复
+
+`previous_response_id` 会绑定到生成它的渠道、端点来源、模型、认证身份和 WebSocket
+连接代次。原生 WebSocket 续接会在匹配的上游会话中发送下一轮增量内容。过期、缺失、
+失效或超出预算的上下文不会被静默发送到其他端点或渠道。
+
+当完整上下文不可用时，AxonHub 返回 HTTP 400，或返回带有
+`previous_response_not_found` 代码的 WebSocket 错误，并要求客户端删除
+`previous_response_id`、重新发送完整输入。此恢复错误不会进入普通渠道故障转移。
+同一个下游连接上的其他 WebSocket lane 不会因某一个 lane 的恢复错误而关闭。
+
+当前有界默认值为：单条 HTTP 保留记录或流捕获 16 MiB、保留载荷总量 64 MiB、单个
+下游连接的单帧或排队帧 128 MiB。超过保留预算时，只会移除可选的回放历史；如果提供商
+会话仍可继续，则保留有效的原生 response identity。后续请求如果需要已被移除的历史，
+客户端必须重新发送完整输入。
+
+**示例**（GLM Coding Plan 渠道，三个端点 + 覆盖）：
+
+| endpoint | api_format | base_url |
+|---|---|---|
+| 1 | `openai/chat_completions` | `https://open.bigmodel.cn/api/coding/paas/v4` |
+| 2 | `openai/responses` | `https://open.bigmodel.cn/api/v1` |
+| 3 | `anthropic/messages` | 继承渠道 Base URL（`https://open.bigmodel.cn/api/anthropic`） |
+
+| 客户端 | 入站协议 | 选中出站协议 | 是否转换 |
+|---|---|---|---|
+| Claude Code | `anthropic/messages` | `anthropic/messages` | 否 |
+| Codex | `openai/responses` | `openai/responses` | 否 |
+| OpenAI SDK | `openai/chat_completions` | `openai/chat_completions` | 否 |
+| Codex（覆盖仅含 chat 时） | `openai/responses` | `openai/chat_completions` | 是 |
+
+### Provider 家族路由
+
+自定义 chat 端点按渠道家族选择原生 transformer，而非通用 OpenAI transformer（通用 transformer 按 `/v1` 约定拼接 URL，对非 `/v1` 上游会产生错误地址）：
+
+| 渠道类型 | Transformer | URL 版本 |
+|---|---|---|
+| zhipu / zai（含 `*_anthropic`） | zai | v4 |
+| xiaomi（含 `xiaomi_anthropic`） | zai | v1 |
+| doubao / volcengine（含 `*_anthropic`） | doubao | v3 |
+
+家族 transformer 同时应用 provider 方言处理：剥离 `metadata`、按 6–128 字符约束裁剪 `user_id`、将 `reasoning_effort` 转换为 `thinking.type`。
+
+## 思考等级（Reasoning Effort）
+
+统一思考等级取值：`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。
+
+### 渠道级映射（ReasoningEffortMapping）
+
+在渠道 **转换选项** 中配置 `{from, to}` 列表，第一个命中的 `from` 生效。映射在 outbound 转换前统一应用，对所有客户端与所有出站协议（chat / responses / messages）生效，并同步覆盖 Anthropic 元数据中的原生 effort。
+
+### 协议转换规则
+
+- Anthropic messages：优先保留客户端原生表达（`adaptive` / `budget_tokens` 原样回环）；显式 effort 原样透传（含 `max`、`xhigh`）；`minimal` 归一为 `low`（唯一自动互转）。
+- OpenAI chat / responses：`reasoning_effort` / `reasoning.effort` 原样透传。
+- 上游不支持某等级时，原始报错直接透传给客户端；不兼容等级可通过渠道映射兜底。
+
 ## 常见问题
 
 ### Q: 测试连接失败怎么办？

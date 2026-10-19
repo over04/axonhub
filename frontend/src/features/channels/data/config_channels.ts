@@ -9,6 +9,7 @@ import {
   Moonshot,
   Zhipu,
   OpenRouter,
+  ZenMux,
   XAI,
   Volcengine,
   SiliconCloud,
@@ -34,8 +35,10 @@ import {
   Groq,
 } from '@lobehub/icons';
 import { AtlasCloudIcon } from '../components/atlas-cloud-icon';
+import { CommandCodeIcon } from '../components/commandcode-icon';
 import { EvolinkIcon } from '../components/evolink-icon';
 import { FennoIcon } from '../components/fenno-icon';
+import { TypeSafeIcon } from '../components/typesafe-icon';
 import { NanoGPTIcon } from '../components/nanogpt-icon';
 import { BURNCLOUD_DEFAULT_MODELS } from './burncloud-models';
 import { ApiFormat, ChannelType } from './schema';
@@ -45,6 +48,7 @@ export const OPENAI_RESPONSES: ApiFormat = 'openai/responses';
 export const ANTHROPIC_MESSAGES: ApiFormat = 'anthropic/messages';
 export const GEMINI_CONTENTS: ApiFormat = 'gemini/contents';
 export const GEMINI_EMBEDDINGS: ApiFormat = 'gemini/embeddings';
+export const TYPESAFE_SYSTEMONE: ApiFormat = 'typesafe/systemone';
 
 /**
  * Channel configuration interface
@@ -124,7 +128,7 @@ export const CHANNEL_CONFIGS: Record<ChannelType, ChannelConfig> = {
   codex: {
     channelType: 'codex',
     baseURL: 'https://chatgpt.com/backend-api/codex#',
-    defaultModels: ['gpt-5.2', 'gpt-5.2-codex'],
+    defaultModels: ['gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra'],
     apiFormat: OPENAI_RESPONSES,
     color: 'bg-[#32746D] text-white border-[#32746D]',
     icon: OpenAI,
@@ -132,17 +136,7 @@ export const CHANNEL_CONFIGS: Record<ChannelType, ChannelConfig> = {
   antigravity: {
     channelType: 'antigravity',
     baseURL: 'https://daily-cloudcode-pa.sandbox.googleapis.com',
-    defaultModels: [
-      'gemini-3-pro',
-      'gemini-3-flash',
-      'gemini-2.5-flash',
-      'gemini-2.5-flash-lite',
-      'claude-sonnet-4-5',
-      'claude-sonnet-4-5-thinking',
-      'claude-opus-4-5-thinking',
-      'gemini-3-pro-image',
-      'gpt-oss-120b-medium',
-    ],
+    defaultModels: [], // Available models are discovered using the account's OAuth credentials.
     apiFormat: GEMINI_CONTENTS,
     color: 'bg-green-100 text-green-800 border-green-200',
     icon: Google,
@@ -569,6 +563,62 @@ export const CHANNEL_CONFIGS: Record<ChannelType, ChannelConfig> = {
     color: 'bg-blue-100 text-blue-800 border-blue-200',
     icon: Bailian,
   },
+  bailian_responses: {
+    channelType: 'bailian_responses',
+    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    // Models with full OpenAI Responses API compatibility (built-in tools / agent capabilities), in the order
+    // listed by https://help.aliyun.com/zh/model-studio/compatibility-with-openai-responses-api.
+    // Other Bailian text-generation models only get basic compatibility (agent capabilities are limited),
+    // so they are not preselected here and can be added manually.
+    defaultModels: [
+      // Qwen
+      'qwen3.8-max',
+      'qwen3.8-max-0902',
+      'qwen3.8-flash',
+      'qwen3.8-2.4t-a95b',
+      'qwen3.8-27b',
+      'qwen3.8-omni-flash',
+      'qwen3.7-max',
+      'qwen3.7-max-2026-05-20',
+      'qwen3.7-max-2026-06-08',
+      'qwen3.7-max-2026-05-17',
+      'qwen3.7-max-preview',
+      'qwen3-max',
+      'qwen3-max-2026-01-23',
+      'qwen3.7-plus',
+      'qwen3.7-plus-2026-05-26',
+      'qwen3.6-plus',
+      'qwen3.6-plus-2026-04-02',
+      'qwen3.5-plus',
+      'qwen3.5-plus-2026-04-20',
+      'qwen3.5-plus-2026-02-15',
+      'qwen3.7-flash',
+      'qwen3.7-flash-2026-07-15',
+      'qwen3.6-flash',
+      'qwen3.6-flash-2026-04-16',
+      'qwen3.5-flash',
+      'qwen3.5-flash-2026-02-23',
+      'qwen3.6-35b-a3b',
+      'qwen3.5-397b-a17b',
+      'qwen3.5-122b-a10b',
+      'qwen3.5-27b',
+      'qwen3.5-35b-a3b',
+      // DeepSeek
+      'deepseek-v4.1-flash',
+      'deepseek-v4-pro',
+      'deepseek-v4-pro-0813',
+      'deepseek-v4-flash',
+      'deepseek-v4-flash-0731',
+      // GLM
+      'glm-5.3',
+      'glm-5.2',
+      // Kimi
+      'kimi-k3',
+    ],
+    apiFormat: OPENAI_RESPONSES,
+    color: 'bg-blue-100 text-blue-800 border-blue-200',
+    icon: Bailian,
+  },
   bailian_anthropic: {
     channelType: 'bailian_anthropic',
     baseURL: 'https://dashscope.aliyuncs.com/apps/anthropic',
@@ -638,6 +688,14 @@ export const CHANNEL_CONFIGS: Record<ChannelType, ChannelConfig> = {
     apiFormat: OPENAI_CHAT_COMPLETIONS,
     color: 'bg-purple-100 text-purple-800 border-purple-200',
     icon: Jina,
+  },
+  typesafe: {
+    channelType: 'typesafe',
+    baseURL: 'https://api.typesafe.ai/v1',
+    defaultModels: ['jev-latest', 'jev-preview', 'jev-1.13.0'],
+    apiFormat: TYPESAFE_SYSTEMONE,
+    color: 'bg-blue-100 text-blue-800 border-blue-200',
+    icon: TypeSafeIcon,
   },
   github: {
     channelType: 'github',
@@ -802,6 +860,62 @@ export const CHANNEL_CONFIGS: Record<ChannelType, ChannelConfig> = {
     color: 'bg-orange-100 text-orange-800 border-orange-200',
     icon: Groq,
   },
+  zenmux: {
+    channelType: 'zenmux',
+    baseURL: 'https://zenmux.ai/api/v1',
+    defaultModels: ['openai/gpt-5', 'anthropic/claude-sonnet-4.5'],
+    apiFormat: OPENAI_CHAT_COMPLETIONS,
+    color: 'bg-gray-100 text-gray-800 border-gray-200',
+    icon: ZenMux,
+  },
+  zenmux_responses: {
+    channelType: 'zenmux_responses',
+    baseURL: 'https://zenmux.ai/api/v1',
+    defaultModels: ['openai/gpt-5'],
+    apiFormat: OPENAI_RESPONSES,
+    color: 'bg-gray-100 text-gray-800 border-gray-200',
+    icon: ZenMux,
+  },
+  zenmux_anthropic: {
+    channelType: 'zenmux_anthropic',
+    baseURL: 'https://zenmux.ai/api/anthropic',
+    defaultModels: ['anthropic/claude-sonnet-4.5'],
+    apiFormat: ANTHROPIC_MESSAGES,
+    color: 'bg-gray-100 text-gray-800 border-gray-200',
+    icon: ZenMux,
+  },
+  zenmux_gemini: {
+    channelType: 'zenmux_gemini',
+    baseURL: 'https://zenmux.ai/api/vertex-ai',
+    defaultModels: ['google/gemini-2.5-pro'],
+    apiFormat: GEMINI_CONTENTS,
+    color: 'bg-gray-100 text-gray-800 border-gray-200',
+    icon: ZenMux,
+  },
+  zenmux_video: {
+    channelType: 'zenmux_video',
+    baseURL: 'https://zenmux.ai/api/v1',
+    defaultModels: [],
+    apiFormat: 'zenmux/video',
+    color: 'bg-gray-100 text-gray-800 border-gray-200',
+    icon: ZenMux,
+  },
+  commandcode: {
+    channelType: 'commandcode',
+    baseURL: 'https://api.commandcode.ai/provider/v1',
+    defaultModels: [],
+    apiFormat: OPENAI_CHAT_COMPLETIONS,
+    color: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+    icon: CommandCodeIcon,
+  },
+  commandcode_anthropic: {
+    channelType: 'commandcode_anthropic',
+    baseURL: 'https://api.commandcode.ai/provider/v1',
+    defaultModels: [],
+    apiFormat: ANTHROPIC_MESSAGES,
+    color: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+    icon: CommandCodeIcon,
+  },
 };
 
 /**
@@ -851,6 +965,7 @@ export type Provider =
   | 'modelscope'
   | 'bailian'
   | 'jina'
+  | 'typesafe'
   | 'github'
   | 'github_copilot'
   | 'cerebras'
@@ -861,7 +976,9 @@ export type Provider =
   | 'opencode_go'
   | 'ollama'
   | 'evolink'
-  | 'groq';
+  | 'groq'
+  | 'zenmux'
+  | 'commandcode';
 
 /**
  * Map channel type to provider
@@ -913,9 +1030,11 @@ export const CHANNEL_TYPE_TO_PROVIDER: Record<ChannelType, Provider> = {
   burncloud: 'burncloud',
   modelscope: 'modelscope',
   bailian: 'bailian',
+  bailian_responses: 'bailian',
   bailian_anthropic: 'bailian',
   moonshot_coding: 'moonshot',
   jina: 'jina',
+  typesafe: 'typesafe',
   github: 'github',
   github_copilot: 'github_copilot',
   codex: 'codex',
@@ -928,9 +1047,17 @@ export const CHANNEL_TYPE_TO_PROVIDER: Record<ChannelType, Provider> = {
   opencode_go: 'opencode_go',
   opencode_go_anthropic: 'opencode_go',
   ollama: 'ollama',
+  ollama_anthropic: 'ollama',
   evolink: 'evolink',
   evolink_anthropic: 'evolink',
   groq: 'groq',
+  zenmux: 'zenmux',
+  zenmux_responses: 'zenmux',
+  zenmux_anthropic: 'zenmux',
+  zenmux_gemini: 'zenmux',
+  zenmux_video: 'zenmux',
+  commandcode: 'commandcode',
+  commandcode_anthropic: 'commandcode',
 };
 
 /**
