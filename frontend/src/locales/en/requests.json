@@ -1,6 +1,7 @@
 {
   "requests.title": "Request Logs",
   "requests.description": "View and manage LLM call request logs",
+  "requests.systemDescription": "View request logs across all projects and users",
   "requests.columns.modelId": "Model ID",
   "requests.columns.request": "Request",
   "requests.columns.model": "Model",
@@ -18,6 +19,7 @@
   "requests.columns.channel": "Channel",
   "requests.columns.channelAPIKeyIndex": "Key",
   "requests.columns.clientIP": "Client IP",
+  "requests.columns.project": "Project",
   "requests.columns.userAgent": "User-Agent",
   "requests.columns.user": "User",
   "requests.columns.apiKey": "API Key",

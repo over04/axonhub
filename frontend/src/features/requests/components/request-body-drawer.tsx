@@ -47,7 +47,7 @@ interface RequestBodyDrawerProps {
   /** Optional server-side filter currently applied to the table. */
   queryWhere?: Record<string, any>;
   projectId?: string | null;
-  onViewDetail?: (requestId: string) => void;
+  onViewDetail?: (requestId: string, projectID?: string | null) => void;
 }
 
 const OPEN_ANIMATION_DELAY_MS = 520;
@@ -256,8 +256,11 @@ export function RequestBodyDrawer({
 
   const handleViewDetail = useCallback(() => {
     if (currentRequestId) {
+      // The request may belong to a different project than the selected one when
+      // the drawer is opened from the system-wide list, so prefer its own project.
+      const requestProjectID = displayedRequest?.projectID ?? listRequest?.projectID ?? effectiveProjectId;
       if (onViewDetail) {
-        onViewDetail(currentRequestId);
+        onViewDetail(currentRequestId, requestProjectID);
       } else if (effectiveProjectId) {
         navigateWithSearch({
           to: '/project/requests/$requestId',
@@ -267,11 +270,21 @@ export function RequestBodyDrawer({
         navigate({
           to: '/requests/$requestId',
           params: { requestId: currentRequestId },
+          search: requestProjectID ? { projectId: requestProjectID } : {},
         });
       }
       onOpenChange(false);
     }
-  }, [currentRequestId, onViewDetail, effectiveProjectId, navigateWithSearch, navigate, onOpenChange]);
+  }, [
+    currentRequestId,
+    onViewDetail,
+    displayedRequest?.projectID,
+    listRequest?.projectID,
+    effectiveProjectId,
+    navigateWithSearch,
+    navigate,
+    onOpenChange,
+  ]);
 
   // ── render ─────────────────────────────────────────────────────────────────
   return (

@@ -1,4 +1,6 @@
 {
+  "modelAvailability.title": "Model Availability",
+  "modelAvailability.description": "Live availability, success rate and latency for every model across all channels.",
   "models.title": "Models",
   "models.description": "Configure AI model associations, capabilities, and fallback rules.",
   "models.columns.icon": "Icon",

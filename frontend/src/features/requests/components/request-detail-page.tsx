@@ -145,6 +145,9 @@ export default function RequestDetailPage() {
   });
 
   const request = previewRequest ?? requestData;
+  // Prefer the request's own project so the SSE preview keeps working when the
+  // detail page is opened for a request outside the currently selected project.
+  const previewProjectId = requestData?.projectID ?? selectedProjectId ?? null;
 
   useEffect(() => {
     if (!requestData) {
@@ -196,7 +199,7 @@ export default function RequestDetailPage() {
       return;
     }
 
-    if (!selectedProjectId) {
+    if (!previewProjectId) {
       return;
     }
 
@@ -264,7 +267,7 @@ export default function RequestDetailPage() {
         const response = await fetch(`/admin/requests/${encodeURIComponent(requestIdNumber)}/preview`, {
           headers: {
             Authorization: `Bearer ${currentToken}`,
-            'X-Project-ID': selectedProjectId,
+            'X-Project-ID': previewProjectId,
           },
           signal: controller.signal,
         });
@@ -367,7 +370,7 @@ export default function RequestDetailPage() {
       clearReconnectTimer();
       controller.abort();
     };
-  }, [isLivePreviewEnabled, previewFallbackActive, requestData, refetchRequest, selectedProjectId]);
+  }, [isLivePreviewEnabled, previewFallbackActive, requestData, refetchRequest, previewProjectId]);
 
   const handleBack = () => {
     navigate({
@@ -435,7 +438,7 @@ export default function RequestDetailPage() {
         <div className='container mx-auto max-w-7xl p-6'>
           <RequestDetailContent
             requestId={requestId}
-            projectId={selectedProjectId}
+            projectId={previewProjectId}
             previewRequest={previewRequest}
             isPreviewStreaming={isPreviewStreaming}
           />

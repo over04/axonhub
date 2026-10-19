@@ -1,6 +1,7 @@
 {
   "analytics.title": "数据分析",
   "analytics.description": "多维度数据分析，支持自定义筛选",
+  "analytics.sections.globalOverview": "全局概览",
   "analytics.filter.dateRange": "时间范围",
   "analytics.filter.startDate": "开始日期",
   "analytics.filter.endDate": "结束日期",

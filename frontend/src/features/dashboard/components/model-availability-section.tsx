@@ -181,8 +181,8 @@ export function ModelAvailabilitySection() {
             <Activity className='h-4 w-4 text-primary' />
           </div>
           <div className='space-y-1'>
-            <CardTitle>{t('projectUsage.modelAvailability.title')}</CardTitle>
-            <CardDescription>{t('projectUsage.modelAvailability.description')}</CardDescription>
+            <CardTitle>{t('modelAvailability.title')}</CardTitle>
+            <CardDescription>{t('modelAvailability.description')}</CardDescription>
           </div>
         </div>
       </CardHeader>

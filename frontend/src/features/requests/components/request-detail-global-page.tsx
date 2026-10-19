@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import { useParams, useRouter } from '@tanstack/react-router';
+import { useParams, useRouter, useSearch } from '@tanstack/react-router';
 import { ArrowLeft, Copy, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -16,8 +16,13 @@ import { RequestDetailContent } from './request-detail-content';
 export default function RequestDetailGlobalPage() {
   const { t } = useTranslation();
   const { requestId } = useParams({ from: '/_authenticated/requests/$requestId' });
+  const { projectId: searchProjectId } = useSearch({ from: '/_authenticated/requests/$requestId' });
   const router = useRouter();
+  // Global detail is readable without a project header, but previews and stored
+  // content are project-scoped: use the project passed by the system-wide list,
+  // falling back to the project the request itself belongs to.
   const { data: request } = useRequest(requestId, { projectId: null });
+  const projectId = searchProjectId ?? request?.projectID ?? null;
 
   const copyRequestID = async () => {
     try {
@@ -69,7 +74,7 @@ export default function RequestDetailGlobalPage() {
 
       <Main className='flex-1 overflow-auto'>
         <div className='container mx-auto max-w-7xl p-6'>
-          <RequestDetailContent requestId={requestId} projectId={null} />
+          <RequestDetailContent requestId={requestId} projectId={projectId} />
         </div>
       </Main>
     </div>

@@ -3,6 +3,7 @@ import { graphqlRequest } from '@/gql/graphql';
 import { useTranslation } from 'react-i18next';
 import { useSelectedProjectId } from '@/stores/projectStore';
 import { useErrorHandler } from '@/hooks/use-error-handler';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useRequestPermissions } from '../../../hooks/useRequestPermissions';
 import {
   Request,
@@ -14,7 +15,10 @@ import {
 } from './schema';
 
 // Dynamic GraphQL query builder
-function buildRequestsQuery(permissions: { canViewApiKeys: boolean; canViewChannels: boolean; canViewCallerUser: boolean }) {
+function buildRequestsQuery(
+  permissions: { canViewApiKeys: boolean; canViewChannels: boolean; canViewCallerUser: boolean },
+  options?: { canViewProject?: boolean }
+) {
   const apiKeyFields = permissions.canViewApiKeys
     ? `
           apiKey {
@@ -44,6 +48,20 @@ function buildRequestsQuery(permissions: { canViewApiKeys: boolean; canViewChann
                   channelAPIKeyIndex`
     : '';
 
+  // projectID is always selected so the system-wide list can link to a request's
+  // own project. The nested project edge is gated on read_projects: the Project
+  // entity is protected by its own privacy policy, so selecting it without that
+  // scope makes the field resolver fail (and would null out the whole row).
+  const projectFields = options?.canViewProject
+    ? `
+            projectID
+            project {
+              id
+              name
+            }`
+    : `
+            projectID`;
+
   return `
     query GetRequests(
       $first: Int
@@ -58,7 +76,7 @@ function buildRequestsQuery(permissions: { canViewApiKeys: boolean; canViewChann
           node {
             id
             createdAt
-            updatedAt${apiKeyFields}${requestChannelFields}
+            updatedAt${apiKeyFields}${requestChannelFields}${projectFields}
             source
             modelID
             format
@@ -308,20 +326,25 @@ export function useRequests(variables?: {
     projectID?: string;
     [key: string]: any;
   };
-}, options?: { projectId?: string | null; scopeToSelectedProject?: boolean; enabled?: boolean }) {
+}, options?: { projectId?: string | null; scopeToSelectedProject?: boolean; enabled?: boolean; systemScope?: boolean }) {
   const { handleError } = useErrorHandler();
   const { t } = useTranslation();
   const permissions = useRequestPermissions();
+  const { hasSystemScope } = usePermissions();
   const selectedProjectId = useSelectedProjectId();
-  const scopeToSelectedProject = options?.scopeToSelectedProject ?? true;
-  const projectId = options?.projectId !== undefined ? options.projectId : selectedProjectId;
+  // System scope lists requests across every project: no X-Project-ID header and
+  // no implicit projectID filter, so the backend returns the global request list.
+  const systemScope = options?.systemScope ?? false;
+  const scopeToSelectedProject = systemScope ? false : (options?.scopeToSelectedProject ?? true);
+  const projectId = systemScope ? null : (options?.projectId !== undefined ? options.projectId : selectedProjectId);
+  const canViewProject = hasSystemScope('read_projects');
   const enabled = options?.enabled ?? true;
 
   return useQuery({
-    queryKey: ['requests', variables, permissions, projectId, scopeToSelectedProject],
+    queryKey: ['requests', variables, permissions, projectId, scopeToSelectedProject, systemScope, canViewProject],
     queryFn: async () => {
       try {
-        const query = buildRequestsQuery(permissions);
+        const query = buildRequestsQuery(permissions, { canViewProject });
         const headers = projectId ? { 'X-Project-ID': projectId } : undefined;
 
         // Add project filter if project scoping is enabled

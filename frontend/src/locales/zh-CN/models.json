@@ -1,4 +1,6 @@
 {
+  "modelAvailability.title": "模型可用性",
+  "modelAvailability.description": "所有渠道下各模型的实时可用性、成功率与延迟。",
   "models.title": "模型",
   "models.description": "配置 AI 模型关联、能力和回退规则。",
   "models.columns.icon": "图标",

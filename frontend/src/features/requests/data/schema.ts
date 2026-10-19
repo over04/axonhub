@@ -59,6 +59,10 @@ export const requestSchema = z.object({
   apiKey: apiKeySchema.partial().nullable().optional(),
   // channelID: z.string().optional().nullable(),
   channel: channelSchema.partial().nullable().optional(),
+  // Project owning the request. The list view only selects the nested project
+  // (id/name) for users allowed to read projects, so both fields stay optional.
+  projectID: z.string().nullable().optional(),
+  project: z.object({ id: z.string(), name: z.string().nullable().optional() }).nullable().optional(),
   source: requestSourceSchema,
   modelID: z.string(),
   reasoningEffort: z.string().nullable().optional(),

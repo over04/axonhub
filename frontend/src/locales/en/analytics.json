@@ -1,6 +1,7 @@
 {
   "analytics.title": "Analytics",
   "analytics.description": "Multi-dimensional data analysis with custom filtering",
+  "analytics.sections.globalOverview": "Global Overview",
   "analytics.filter.dateRange": "Date Range",
   "analytics.filter.startDate": "Start Date",
   "analytics.filter.endDate": "End Date",

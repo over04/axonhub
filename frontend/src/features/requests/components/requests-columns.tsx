@@ -24,7 +24,9 @@ import { getStatusColor } from './help';
 
 interface UseRequestsColumnsOptions {
   onBodyClick?: (requestId: string, index: number) => void;
-  onViewDetail?: (requestId: string) => void;
+  onViewDetail?: (requestId: string, projectID?: string | null) => void;
+  /** Show the owning project column (system-wide request list). */
+  showProject?: boolean;
 }
 
 export const DEFAULT_HIDDEN_COLUMN_IDS = ['status', 'source', 'apiFormat', 'clientIP', 'userAgent', 'tokensPerSecond', 'writeCache'];
@@ -39,6 +41,7 @@ export const DEFAULT_MOBILE_HIDDEN_COLUMN_IDS = [
   'cost',
   'duration',
   'caller',
+  'project',
 ];
 
 export const MODEL_ID_COLUMN = 'modelID' as const;
@@ -80,9 +83,9 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
     await updateSecuritySettings.mutateAsync({ blockedIPs: blockedIPs.filter((ip) => ip.trim() !== normalizedIP) });
   };
 
-  const openDetail = (requestId: string) => {
+  const openDetail = (requestId: string, projectID?: string | null) => {
     if (options?.onViewDetail) {
-      options.onViewDetail(requestId);
+      options.onViewDetail(requestId, projectID);
       return;
     }
 
@@ -90,6 +93,22 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
       to: '/project/requests/$requestId',
       params: { requestId },
     });
+  };
+
+  const projectColumn: ColumnDef<Request> = {
+    id: 'project',
+    accessorFn: (row) => row.project?.name ?? row.projectID ?? '',
+    header: ({ column }) => <DataTableColumnHeader column={column} title={t('requests.columns.project')} />,
+    enableSorting: false,
+    enableHiding: true,
+    cell: ({ row }) => {
+      const projectName = row.original.project?.name?.trim();
+      if (projectName) return <span className='text-xs'>{projectName}</span>;
+      // Without read_projects the project edge is not selectable; show the raw id.
+      const projectID = row.original.projectID;
+      if (projectID) return <span className='text-muted-foreground text-xs font-mono'>{projectID}</span>;
+      return <span className='text-muted-foreground text-xs'>-</span>;
+    },
   };
 
   const columns: ColumnDef<Request>[] = [
@@ -297,6 +316,7 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
       filterFn: (row, id, value) => value.includes(row.getValue(id)),
       cell: () => null,
     },
+    ...(options?.showProject ? [projectColumn] : []),
     {
       id: 'clientIP',
       accessorKey: 'clientIP',
@@ -713,7 +733,7 @@ export function useRequestsColumns(options?: UseRequestsColumnsOptions): ColumnD
               variant='ghost'
               size='icon-sm'
               className='h-8 w-8'
-              onClick={() => openDetail(row.original.id)}
+              onClick={() => openDetail(row.original.id, row.original.projectID)}
               aria-label={t('requests.actions.viewDetails')}
             >
               <FileText className='h-4 w-4' />

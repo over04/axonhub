@@ -63,7 +63,9 @@ interface RequestsTableProps {
   onFiltersChange: (filters: RequestTableFilters) => void;
   onDateRangeChange: (range: DateTimeRangeValue | undefined) => void;
   onResetFilters: () => void;
-  onViewDetail: (requestId: string) => void;
+  onViewDetail: (requestId: string, projectID?: string | null) => void;
+  /** Render the system-wide list: show the project column and read requests without project scoping. */
+  systemScope?: boolean;
   onRefresh: () => void;
   showRefresh: boolean;
   autoRefreshInterval?: AutoRefreshInterval;
@@ -109,6 +111,7 @@ export function RequestsTable({
   onDateRangeChange,
   onResetFilters,
   onViewDetail,
+  systemScope = false,
   onRefresh,
   showRefresh,
   autoRefreshInterval = null,
@@ -127,7 +130,7 @@ export function RequestsTable({
     setDrawerOpen(true);
   }, []);
 
-  const requestsColumns = useRequestsColumns({ onBodyClick: handleBodyClick, onViewDetail });
+  const requestsColumns = useRequestsColumns({ onBodyClick: handleBodyClick, onViewDetail, showProject: systemScope });
   const [sorting, setSorting] = useState<SortingState>([]);
   const isMobile = useIsMobile();
 
@@ -421,6 +424,7 @@ export function RequestsTable({
         initialRequests={data}
         pageInfo={pageInfo}
         queryWhere={queryWhere}
+        projectId={systemScope ? null : undefined}
         onViewDetail={onViewDetail}
       />
     </div>

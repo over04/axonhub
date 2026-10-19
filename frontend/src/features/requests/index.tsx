@@ -173,7 +173,7 @@ function clearRequestFilterSearch(draft: Record<string, unknown>) {
   });
 }
 
-function RequestsContent() {
+function RequestsContent({ systemScope }: { systemScope: boolean }) {
   const navigate = useNavigate();
   const currentSearch = useRouterState({
     select: (state) => (state.location.search ?? {}) as Record<string, unknown>,
@@ -212,14 +212,17 @@ function RequestsContent() {
     return Object.keys(where).length > 0 ? where : undefined;
   })();
 
-  const { data, isLoading, refetch } = useRequests({
-    ...paginationArgs,
-    where: whereClause,
-    orderBy: {
-      field: 'CREATED_AT',
-      direction: 'DESC',
+  const { data, isLoading, refetch } = useRequests(
+    {
+      ...paginationArgs,
+      where: whereClause,
+      orderBy: {
+        field: 'CREATED_AT',
+        direction: 'DESC',
+      },
     },
-  });
+    { systemScope }
+  );
 
   const requests = data?.edges?.map((edge) => edge.node) || [];
   const pageInfo = data?.pageInfo;
@@ -325,14 +328,25 @@ function RequestsContent() {
   }, [updateRequestSearch]);
 
   const handleViewDetail = useCallback(
-    (requestId: string) => {
+    (requestId: string, requestProjectID?: string | null) => {
+      if (systemScope) {
+        // The system list shows requests from every project, so the detail page
+        // needs the owning project to load previews and stored content.
+        navigate({
+          to: '/requests/$requestId',
+          params: { requestId },
+          search: requestProjectID ? { projectId: requestProjectID } : {},
+        });
+        return;
+      }
+
       navigate({
         to: '/project/requests/$requestId',
         params: { requestId },
         search: currentSearch,
       });
     },
-    [navigate, currentSearch]
+    [navigate, currentSearch, systemScope]
   );
 
   return (
@@ -357,6 +371,7 @@ function RequestsContent() {
         onDateRangeChange={handleDateRangeChange}
         onResetFilters={handleResetFilters}
         onViewDetail={handleViewDetail}
+        systemScope={systemScope}
         onRefresh={refetch}
         showRefresh={isFirstPage}
         autoRefreshInterval={autoRefreshInterval}
@@ -367,15 +382,18 @@ function RequestsContent() {
   );
 }
 
-export default function RequestsManagement() {
+export default function RequestsManagement({ systemScope = false }: { systemScope?: boolean } = {}) {
   const { t } = useTranslation();
 
   return (
     <RequestsProvider>
-      <PageHeader title={t('requests.title')} description={t('requests.description')} />
+      <PageHeader
+        title={t('requests.title')}
+        description={systemScope ? t('requests.systemDescription') : t('requests.description')}
+      />
 
       <Main fixed className='py-2 sm:py-6'>
-        <RequestsContent />
+        <RequestsContent systemScope={systemScope} />
       </Main>
     </RequestsProvider>
   );
