@@ -22,12 +22,13 @@ import { Header } from '@/components/layout/header';
 import { formatNumber } from '@/utils/format-number';
 import { useSelectedProjectId } from '@/stores/projectStore';
 import { useProjectUsageOverview } from '../data/project-usage';
+import { ModelAvailabilitySection } from './model-availability-section';
 
-// ProjectUsageContent renders the project-scoped usage metrics (stat cards +
-// 30-day requests/tokens trend) without page chrome, so the dashboard can embed
-// it under its own header. Global metrics live on /analytics; model
-// availability lives on /model-availability.
-export function ProjectUsageContent() {
+// ProjectUsage is the registered user's self-service usage dashboard. It shows
+// the caller's own project metrics only (non-owners); owners picking a project
+// see that project's metrics. Mirrors the admin dashboard's visual style:
+// icon stat cards plus a 30-day requests/tokens trend chart.
+export function ProjectUsage() {
   const { t } = useTranslation();
   const projectId = useSelectedProjectId();
   const { data, isLoading } = useProjectUsageOverview();
@@ -39,15 +40,19 @@ export function ProjectUsageContent() {
   // not enough.
   if (!projectId) {
     return (
-      <div className='text-muted-foreground flex h-64 items-center justify-center text-sm'>
-        {t('projectUsage.noProject')}
+      <div className='flex-1 space-y-6 p-8 pt-6'>
+        <Header />
+        <div className='text-muted-foreground flex h-64 items-center justify-center text-sm'>
+          {t('projectUsage.noProject')}
+        </div>
       </div>
     );
   }
 
   if (isLoading) {
     return (
-      <div className='space-y-6'>
+      <div className='flex-1 space-y-6 p-8 pt-6'>
+        <Header />
         <div className='grid gap-6 md:grid-cols-2 lg:grid-cols-4'>
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className='h-[140px]' />
@@ -111,7 +116,14 @@ export function ProjectUsageContent() {
   );
 
   return (
-    <div className='space-y-6'>
+    <div className='flex-1 space-y-6 p-8 pt-6'>
+      <Header />
+
+      <div className='space-y-1'>
+        <h1 className='text-2xl font-bold tracking-tight'>{t('projectUsage.title')}</h1>
+        <p className='text-muted-foreground text-sm'>{t('projectUsage.subtitle')}</p>
+      </div>
+
       <div className='grid gap-6 md:grid-cols-2 lg:grid-cols-4'>
         {cards.map((c) => {
           const Icon = c.icon;
@@ -226,26 +238,8 @@ export function ProjectUsageContent() {
           </ResponsiveContainer>
         </CardContent>
       </Card>
-    </div>
-  );
-}
 
-// ProjectUsage is the registered user's self-service usage page. It shows the
-// caller's own project metrics only (non-owners); owners picking a project see
-// that project's metrics on the dashboard.
-export function ProjectUsage() {
-  const { t } = useTranslation();
-
-  return (
-    <div className='flex-1 space-y-6 p-8 pt-6'>
-      <Header />
-
-      <div className='space-y-1'>
-        <h1 className='text-2xl font-bold tracking-tight'>{t('projectUsage.title')}</h1>
-        <p className='text-muted-foreground text-sm'>{t('projectUsage.subtitle')}</p>
-      </div>
-
-      <ProjectUsageContent />
+      <ModelAvailabilitySection />
     </div>
   );
 }

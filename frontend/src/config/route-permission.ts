@@ -23,12 +23,6 @@ export const routeConfigs: RouteGroup[] = [
     scopeLevel: 'system', // Admin 路由组只能通过 system-level 权限访问
     routes: [
       {
-        // 全局统计：原仪表板上的全局卡片已迁移至此
-        path: '/analytics',
-        requiredScopes: ['read_dashboard'],
-        mode: 'hidden',
-      },
-      {
         path: '/projects',
         requiredScopes: ['read_projects'],
         mode: 'hidden',
@@ -37,12 +31,6 @@ export const routeConfigs: RouteGroup[] = [
         // 全部用户请求（系统级视图）
         path: '/requests',
         requiredScopes: ['read_requests'],
-        mode: 'hidden',
-      },
-      {
-        // 模型可用性（全局，从仪表板迁出）
-        path: '/model-availability',
-        requiredScopes: ['read_channels'],
         mode: 'hidden',
       },
       {

@@ -4,11 +4,30 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useGeneralSettings } from '@/features/system/data/system';
+import type { AnalyticsDimensionStat } from '../data/analytics';
+
 function formatExactNumber(value: number): string {
   return Math.round(value).toLocaleString();
 }
-import { useGeneralSettings } from '@/features/system/data/system';
-import type { AnalyticsDimensionStat } from '../data/analytics';
+
+const COMPACT_UNITS = [
+  { limit: 1e12, en: 'T', zh: '万亿' },
+  { limit: 1e8, en: 'B', zh: '亿' },
+  { limit: 1e4, en: 'M', zh: '万' },
+] as const;
+
+function formatCompactNumber(value: number, isZh: boolean): string {
+  const abs = Math.abs(value);
+  for (const unit of COMPACT_UNITS) {
+    if (abs >= unit.limit) {
+      const scaled = value / unit.limit;
+      const digits = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
+      return `${scaled.toFixed(digits)}${isZh ? unit.zh : unit.en}`;
+    }
+  }
+  return Math.round(value).toLocaleString();
+}
 
 type Dimension = 'channel' | 'model' | 'apiKey' | 'user';
 
@@ -33,6 +52,7 @@ export function DimensionDetailTable({
 
   const currencyCode = generalSettings?.currencyCode || 'USD';
   const locale = i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US';
+  const isZh = i18n.language.startsWith('zh');
 
   const formatCurrency = useCallback(
     (val: number) =>
@@ -95,58 +115,107 @@ export function DimensionDetailTable({
             {t('analytics.table.noData')}
           </div>
         ) : (
-          <div className='overflow-x-auto'>
-            <table className='w-full min-w-[1100px] table-fixed caption-bottom text-sm'>
-              <colgroup>
-                <col className='w-[20%]' />
-                <col className='w-[8%]' />
-                <col className='w-[8%]' />
-                <col className='w-[8%]' />
-                <col className='w-[8%]' />
-                <col className='w-[8%]' />
-                <col className='w-[8%]' />
-                <col className='w-[8%]' />
-                <col className='w-[8%]' />
-                <col className='w-[8%]' />
-                <col className='w-[8%]' />
-              </colgroup>
-              <thead className='[&_tr]:border-b'>
-                <tr className='border-b transition-colors hover:bg-muted/50'>
-                  <th className='sticky left-0 z-10 bg-card px-4 py-2 text-left text-xs font-medium text-muted-foreground'>{t('analytics.table.name')}</th>
-                  <th className='px-4 py-2 text-right text-xs font-medium text-muted-foreground'>{t('analytics.table.totalTokens')}</th>
-                  <th className='px-4 py-2 text-right text-xs font-medium text-muted-foreground'>{t('analytics.table.inputTokens')}</th>
-                  <th className='px-4 py-2 text-right text-xs font-medium text-muted-foreground'>{t('analytics.table.cachedTokens')}</th>
-                  <th className='px-4 py-2 text-right text-xs font-medium text-muted-foreground'>{t('analytics.table.uncachedTokens')}</th>
-                  <th className='px-4 py-2 text-right text-xs font-medium text-muted-foreground'>{t('analytics.table.outputTokens')}</th>
-                  <th className='px-4 py-2 text-right text-xs font-medium text-muted-foreground'>{t('analytics.table.cacheHitRate')}</th>
-                  <th className='px-4 py-2 text-right text-xs font-medium text-muted-foreground'>{t('analytics.table.requests')}</th>
-                  <th className='px-4 py-2 text-right text-xs font-medium text-muted-foreground'>{t('analytics.table.tokensPerSecond')}</th>
-                  <th className='px-4 py-2 text-right text-xs font-medium text-muted-foreground'>{t('analytics.table.ttft')}</th>
-                  <th className='px-4 py-2 text-right text-xs font-medium text-muted-foreground'>{t('analytics.table.cost')}</th>
+          <div className='-mx-2 overflow-x-auto'>
+            <table className='w-full min-w-max border-collapse text-sm'>
+              <thead>
+                <tr>
+                  <th className='sticky left-0 z-20 whitespace-nowrap border-b bg-card px-3 pb-2 pt-1 text-left text-xs font-medium text-muted-foreground'>
+                    {t('analytics.table.name')}
+                  </th>
+                  <th className='whitespace-nowrap border-b px-3 pb-2 pt-1 text-right text-xs font-medium text-muted-foreground'>
+                    {t('analytics.table.totalTokens')}
+                  </th>
+                  <th className='whitespace-nowrap border-b px-3 pb-2 pt-1 text-right text-xs font-medium text-muted-foreground'>
+                    {t('analytics.table.inputTokens')}
+                  </th>
+                  <th className='whitespace-nowrap border-b px-3 pb-2 pt-1 text-right text-xs font-medium text-muted-foreground'>
+                    {t('analytics.table.cachedTokens')}
+                  </th>
+                  <th className='whitespace-nowrap border-b px-3 pb-2 pt-1 text-right text-xs font-medium text-muted-foreground'>
+                    {t('analytics.table.uncachedTokens')}
+                  </th>
+                  <th className='whitespace-nowrap border-b px-3 pb-2 pt-1 text-right text-xs font-medium text-muted-foreground'>
+                    {t('analytics.table.outputTokens')}
+                  </th>
+                  <th className='whitespace-nowrap border-b px-3 pb-2 pt-1 text-right text-xs font-medium text-muted-foreground'>
+                    {t('analytics.table.cacheHitRate')}
+                  </th>
+                  <th className='whitespace-nowrap border-b px-3 pb-2 pt-1 text-right text-xs font-medium text-muted-foreground'>
+                    {t('analytics.table.requests')}
+                  </th>
+                  <th className='whitespace-nowrap border-b px-3 pb-2 pt-1 text-right text-xs font-medium text-muted-foreground'>
+                    {t('analytics.table.tokensPerSecond')}
+                  </th>
+                  <th className='whitespace-nowrap border-b px-3 pb-2 pt-1 text-right text-xs font-medium text-muted-foreground'>
+                    {t('analytics.table.ttft')}
+                  </th>
+                  <th className='whitespace-nowrap border-b px-3 pb-2 pt-1 text-right text-xs font-medium text-muted-foreground'>
+                    {t('analytics.table.cost')}
+                  </th>
                 </tr>
               </thead>
-              <tbody className='[&_tr:last-child]:border-0'>
-                {currentData.map((item) => (
-                  <tr key={item.id} className='border-b transition-colors hover:bg-muted/50'>
-                    <td className='sticky left-0 z-10 truncate bg-card px-4 py-2 text-sm font-medium'>{item.name}</td>
-                    <td className='whitespace-nowrap px-4 py-2 text-right text-sm font-medium'>{formatExactNumber(item.totalTokens)}</td>
-                    <td className='whitespace-nowrap px-4 py-2 text-right text-sm'>{formatExactNumber(item.inputTokens)}</td>
-                    <td className='whitespace-nowrap px-4 py-2 text-right text-sm'>{formatExactNumber(item.cachedInputTokens)}</td>
-                    <td className='whitespace-nowrap px-4 py-2 text-right text-sm'>{formatExactNumber(item.inputTokens - item.cachedInputTokens)}</td>
-                    <td className='whitespace-nowrap px-4 py-2 text-right text-sm'>{formatExactNumber(item.outputTokens)}</td>
-                    <td className='whitespace-nowrap px-4 py-2 text-right text-sm'>
-                      {item.inputTokens > 0 ? ((item.cachedInputTokens / item.inputTokens) * 100).toFixed(1) : '0'}%
-                    </td>
-                    <td className='whitespace-nowrap px-4 py-2 text-right text-sm'>{formatExactNumber(item.requestCount)}</td>
-                    <td className='whitespace-nowrap px-4 py-2 text-right text-sm'>
-                      {item.tokensPerSecond == null ? '—' : item.tokensPerSecond.toFixed(2)}
-                    </td>
-                    <td className='whitespace-nowrap px-4 py-2 text-right text-sm'>
-                      {item.ttftMs == null ? '—' : Math.round(item.ttftMs).toLocaleString()}
-                    </td>
-                    <td className='whitespace-nowrap px-4 py-2 text-right text-sm'>{formatCurrency(item.cost)}</td>
-                  </tr>
-                ))}
+              <tbody>
+                {currentData.map((item) => {
+                  const cacheHitRate = item.inputTokens > 0 ? (item.cachedInputTokens / item.inputTokens) * 100 : 0;
+                  return (
+                    <tr key={item.id} className='group transition-colors hover:bg-muted/40'>
+                      <td
+                        className='sticky left-0 z-10 max-w-[220px] truncate border-b bg-card px-3 py-2.5 text-sm font-medium group-hover:bg-muted/40'
+                        title={item.name}
+                      >
+                        {item.name}
+                      </td>
+                      <td
+                        className='whitespace-nowrap border-b px-3 py-2.5 text-right text-sm font-semibold tabular-nums'
+                        title={formatExactNumber(item.totalTokens)}
+                      >
+                        {formatCompactNumber(item.totalTokens, isZh)}
+                      </td>
+                      <td
+                        className='whitespace-nowrap border-b px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground'
+                        title={formatExactNumber(item.inputTokens)}
+                      >
+                        {formatCompactNumber(item.inputTokens, isZh)}
+                      </td>
+                      <td
+                        className='whitespace-nowrap border-b px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground'
+                        title={formatExactNumber(item.cachedInputTokens)}
+                      >
+                        {formatCompactNumber(item.cachedInputTokens, isZh)}
+                      </td>
+                      <td
+                        className='whitespace-nowrap border-b px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground'
+                        title={formatExactNumber(item.inputTokens - item.cachedInputTokens)}
+                      >
+                        {formatCompactNumber(item.inputTokens - item.cachedInputTokens, isZh)}
+                      </td>
+                      <td
+                        className='whitespace-nowrap border-b px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground'
+                        title={formatExactNumber(item.outputTokens)}
+                      >
+                        {formatCompactNumber(item.outputTokens, isZh)}
+                      </td>
+                      <td className='whitespace-nowrap border-b px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground'>
+                        {cacheHitRate.toFixed(1)}%
+                      </td>
+                      <td
+                        className='whitespace-nowrap border-b px-3 py-2.5 text-right text-sm tabular-nums'
+                        title={formatExactNumber(item.requestCount)}
+                      >
+                        {formatCompactNumber(item.requestCount, isZh)}
+                      </td>
+                      <td className='whitespace-nowrap border-b px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground'>
+                        {item.tokensPerSecond == null ? '—' : item.tokensPerSecond.toFixed(2)}
+                      </td>
+                      <td className='whitespace-nowrap border-b px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground'>
+                        {item.ttftMs == null ? '—' : Math.round(item.ttftMs).toLocaleString()}
+                      </td>
+                      <td className='whitespace-nowrap border-b px-3 py-2.5 text-right text-sm font-medium tabular-nums'>
+                        {formatCurrency(item.cost)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -129,13 +129,7 @@ export function ChannelsTable({
   // Save column visibility to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem('channels-table-column-visibility', JSON.stringify(columnVisibility));
-
-    // Notify parent about health column visibility changes
-    if (onHealthColumnVisibilityChange) {
-      const isHealthVisible = columnVisibility.health !== false;
-      onHealthColumnVisibilityChange(isHealthVisible);
-    }
-  }, [columnVisibility, onHealthColumnVisibilityChange]);
+  }, [columnVisibility]);
 
   // Handle column filter changes and sync with server
   const handleColumnFiltersChange = useCallback(
